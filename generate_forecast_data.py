@@ -4,21 +4,26 @@ generate_forecast_data.py
 Synthetic pipeline generator for a RevOps Forecast Anomaly Detector.
 
 Produces a labeled dataset where each opportunity carries:
-  - Standard CRM fields (segment, ARR, stage, dates, rep, discount)
+  - CRM fields (segment, region, stage, dates, rep, discount)
+  - Deal economics (MRR-based: $3,250 floor, ~$3,850 ASP, a tail of large
+    ~$10K+ deals that run longer and are less predictable; arr = mrr * 12)
+  - Firmographics (industry, employees, account_revenue)
   - Full MEDDPICC qualification scores (0-3 per element) + a rollup
   - A ground-truth `is_anomaly` flag and `anomaly_types` list
 
-Anomalies are injected deliberately so the detector has a real test set
-to score precision/recall against. No production data is used.
+Regional behavior (US fast, EMEA slow/lingering, APAC discounts early) and the
+region norms are shared with the detector via config.py, so anomalies are
+labeled relative to each region's norm. No production data is used.
 
-Runtime deps: pandas (required), faker (optional -- falls back to a built-in
-name/company pool if not installed).
+Runtime deps: pandas + config.py (region norms); faker optional (falls back to
+a built-in name/company pool if not installed).
 
 Usage:
-    python generate_forecast_data.py --n 600 --seed 42 --out pipeline.csv
+    python generate_forecast_data.py --n 600 --seed 23 --out pipeline.csv
 """
 
 import argparse
+import math
 import random
 from datetime import date, timedelta
 
@@ -57,11 +62,37 @@ SEGMENTS = ["Enterprise", "Mid-Market", "SMB"]
 SEG_WEIGHTS = [0.20, 0.50, 0.30]
 REGIONS = ["NA", "EMEA", "APAC", "LATAM"]
 REGION_WEIGHTS = [0.45, 0.30, 0.15, 0.10]
-ARR_RANGE = {
-    "Enterprise": (80_000, 400_000),
-    "Mid-Market": (20_000, 80_000),
-    "SMB": (3_000, 20_000),
+
+# ----------------------------------------------------------------------
+# Deal economics -- MRR-based. Company size (segment) sets who's buying;
+# most deals cluster just above the $3,250 floor (ASP ~$3,850 MRR), with a
+# tail of large ~$10K+ MRR deals (mostly Enterprise) that run longer and
+# are less predictable. arr = mrr * 12.
+# ----------------------------------------------------------------------
+MRR_FLOOR = 3250
+# segment -> (floor, exponential mean spread, cap) for a floor + skew draw
+SEGMENT_MRR = {
+    "SMB": (3250, 95, 3800),
+    "Mid-Market": (3300, 380, 4800),
+    "Enterprise": (3950, 780, 6800),  # standard enterprise (non-big)
 }
+BIG_DEAL_MRR = (8000, 14000)          # the "$10K" deals
+ENTERPRISE_BIG_RATE = 0.10            # share of Enterprise deals that are big
+BIG_DEAL_MRR_FLOOR = 8000             # mrr at/above this => "big deal" behavior
+
+# Firmographics by segment. Revenue is derived from headcount so the two agree.
+SEGMENT_EMPLOYEES = {
+    "SMB": (10, 200),
+    "Mid-Market": (200, 2500),
+    "Enterprise": (2500, 80_000),
+}
+REVENUE_PER_EMPLOYEE = (120_000, 320_000)  # USD annual revenue per head
+INDUSTRIES = [
+    "Software", "Financial Services", "Healthcare", "Manufacturing",
+    "Retail & eCommerce", "Media & Telecom", "Energy & Utilities",
+    "Education", "Logistics", "Professional Services",
+]
+INDUSTRY_WEIGHTS = [0.20, 0.14, 0.12, 0.11, 0.10, 0.09, 0.07, 0.07, 0.05, 0.05]
 STAGES = ["Discovery", "Qualification", "Proposal", "Negotiation",
           "Closed Won", "Closed Lost"]
 OPEN_STAGES = STAGES[:4]
@@ -77,6 +108,30 @@ def _region_stage_norm(region, stage):
     the detector via config.REGION_STAGE_NORMAL_DAYS so labels and rules agree."""
     table = config.REGION_STAGE_NORMAL_DAYS.get(region, {})
     return table.get(stage, STAGE_NORMAL_DAYS.get(stage, 20))
+
+
+def _mrr(segment):
+    """Monthly recurring revenue for a deal. Most cluster near the $3,250 floor;
+    ~12% of Enterprise deals are large ~$10K+ deals."""
+    if segment == "Enterprise" and random.random() < ENTERPRISE_BIG_RATE:
+        return round(random.uniform(*BIG_DEAL_MRR), -2)
+    floor, spread, cap = SEGMENT_MRR[segment]
+    return round(min(cap, floor + random.expovariate(1 / spread)), -1)
+
+
+def _log_uniform(lo, hi):
+    """Draw from a log-uniform distribution (more small than large)."""
+    return math.exp(random.uniform(math.log(lo), math.log(hi)))
+
+
+def _firmographics(segment):
+    """Headcount, derived annual revenue, and industry for the account."""
+    lo, hi = SEGMENT_EMPLOYEES[segment]
+    employees = int(round(_log_uniform(lo, hi), -1))
+    rev = employees * random.uniform(*REVENUE_PER_EMPLOYEE)
+    account_revenue = int(round(rev, -5))  # nearest $100k
+    industry = random.choices(INDUSTRIES, weights=INDUSTRY_WEIGHTS)[0]
+    return employees, account_revenue, industry
 
 
 def _region_discount(region, stage):
@@ -131,15 +186,21 @@ def _meddpicc_rollup(scores):
 # ----------------------------------------------------------------------
 def _base_record(i, today):
     seg = random.choices(SEGMENTS, weights=SEG_WEIGHTS)[0]
-    lo, hi = ARR_RANGE[seg]
-    arr = round(random.uniform(lo, hi), -2)
+    mrr = _mrr(seg)
+    arr = mrr * 12
+    is_big = mrr >= BIG_DEAL_MRR_FLOOR
     stage = random.choices(STAGES, weights=STAGE_WEIGHTS)[0]
     region = random.choices(REGIONS, weights=REGION_WEIGHTS)[0]
+    employees, account_revenue, industry = _firmographics(seg)
 
-    created = today - timedelta(days=random.randint(15, 200))
-    # base close date: some in past for closed, future for open
+    # Big deals run a longer sales cycle.
+    created = today - timedelta(days=random.randint(60, 320) if is_big
+                                else random.randint(15, 200))
+    # base close date: past for closed, future for open (big deals close farther out)
     if stage in ("Closed Won", "Closed Lost"):
         close = created + timedelta(days=random.randint(20, 120))
+    elif is_big:
+        close = today + timedelta(days=random.randint(30, 150))
     else:
         close = today + timedelta(days=random.randint(5, 90))
 
@@ -158,12 +219,19 @@ def _base_record(i, today):
         fcat = random.choice(["Best Case", "Pipeline"])
     else:
         fcat = random.choice(["Pipeline", "Omitted"])
+    # Big deals are less predictable -- reps hedge them out of Commit.
+    if is_big and fcat == "Commit" and random.random() < 0.6:
+        fcat = "Best Case"
 
     rec = {
         "deal_id": f"D-{10000 + i}",
         "account": _company(),
         "segment": seg,
         "region": region,
+        "industry": industry,
+        "employees": employees,
+        "account_revenue": account_revenue,
+        "mrr": mrr,
         "arr": arr,
         "stage": stage,
         "forecast_category": fcat,
@@ -323,7 +391,9 @@ def build(n=600, seed=42, anomaly_rate=0.18):
     df["anomaly_types"] = df["anomaly_types"].apply(lambda x: "|".join(x))
 
     col_order = [
-        "deal_id", "account", "segment", "region", "arr", "stage", "forecast_category",
+        "deal_id", "account", "segment", "region",
+        "industry", "employees", "account_revenue",
+        "mrr", "arr", "stage", "forecast_category",
         "rep", "created_date", "stage_entry_date", "orig_close_date",
         "close_date", "close_date_pushes", "discount_pct",
         "days_open", "days_in_stage", "days_to_close", "slip_days",
@@ -337,7 +407,7 @@ def build(n=600, seed=42, anomaly_rate=0.18):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--n", type=int, default=600)
-    ap.add_argument("--seed", type=int, default=31)
+    ap.add_argument("--seed", type=int, default=23)
     ap.add_argument("--anomaly-rate", type=float, default=0.18)
     ap.add_argument("--out", default="pipeline.csv")
     args = ap.parse_args()

@@ -37,6 +37,8 @@ def test_list_deals_shape_and_cap() -> None:
         "account",
         "region",
         "segment",
+        "industry",
+        "mrr",
         "stage",
         "forecast_category",
         "arr",
@@ -47,6 +49,21 @@ def test_list_deals_shape_and_cap() -> None:
     }
     assert set(deals[0].keys()) == expected
     json.dumps(deals)  # must be JSON-serializable
+
+
+def test_firmographics_and_mrr() -> None:
+    # Deal economics: arr == mrr * 12, and firmographics are surfaced.
+    deal = srv.list_deals(limit=1)[0]
+    assert deal["mrr"] >= 3250  # MRR floor
+    assert abs(deal["arr"] - deal["mrr"] * 12) < 1.0
+    full = srv.assess_deal(deal["deal_id"])
+    for key in ("industry", "employees", "account_revenue", "mrr"):
+        assert full[key] is not None
+    industries = srv.list_industries()
+    assert isinstance(industries, list) and deal["industry"] in industries
+    # industry filter narrows the set
+    filtered = srv.list_deals(industry=industries[0], limit=500)
+    assert all(d["industry"] == industries[0] for d in filtered)
 
 
 def test_list_deals_flagged_only() -> None:

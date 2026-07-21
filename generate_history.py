@@ -29,8 +29,10 @@ import pandas as pd
 REGIONS = ["NA", "EMEA", "APAC", "LATAM"]
 
 # Rough current monthly bookings run-rate per region (before seasonality/noise).
-BASE_MONTHLY = {"NA": 3_500_000, "EMEA": 2_200_000, "APAC": 1_100_000, "LATAM": 700_000}
-AVG_DEAL = {"NA": 120_000, "EMEA": 60_000, "APAC": 45_000, "LATAM": 35_000}
+# Calibrated to the pipeline's deal economics (ASP ~$3,850 MRR ≈ $46k ARR) so
+# current-period attainment reads sensibly against projected pipeline bookings.
+BASE_MONTHLY = {"NA": 1_900_000, "EMEA": 1_200_000, "APAC": 600_000, "LATAM": 400_000}
+AVG_DEAL = {"NA": 60_000, "EMEA": 52_000, "APAC": 46_000, "LATAM": 44_000}
 
 YOY_GROWTH = 0.15  # business grows ~15% year over year
 QUARTER_SEASONALITY = {1: 0.90, 2: 1.00, 3: 1.05, 4: 1.20}  # Q4 heavy, Q1 soft

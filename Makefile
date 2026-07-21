@@ -2,7 +2,7 @@
 
 # Regenerate the bundled datasets (already committed; only needed to reseed).
 data: history
-	python generate_forecast_data.py --n 600 --seed 31 --out data/pipeline.csv
+	python generate_forecast_data.py --n 600 --seed 23 --out data/pipeline.csv
 
 # Regenerate historical bookings + forward targets (for YoY/QoQ/MoM + attainment).
 history:

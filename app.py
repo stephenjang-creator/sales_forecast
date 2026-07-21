@@ -30,6 +30,8 @@ FLAGGED_COLUMNS = [
     "account",
     "region",
     "segment",
+    "industry",
+    "mrr",
     "arr",
     "stage",
     "forecast_category",
@@ -95,6 +97,7 @@ def render_flagged(scored: pd.DataFrame, use_narrative: bool) -> None:
 
     # Filters.
     has_region = "region" in flagged.columns
+    has_industry = "industry" in flagged.columns
     f1, f2, f3, f4 = st.columns(4)
     segments = sorted(flagged["segment"].dropna().unique().tolist())
     stages = sorted(flagged["stage"].dropna().unique().tolist())
@@ -105,7 +108,12 @@ def render_flagged(scored: pd.DataFrame, use_narrative: bool) -> None:
         region_pick = f3.multiselect("Region", regions, default=regions)
     else:
         region_pick = None
-    min_risk = f4.slider("Min risk score", 0, int(flagged["risk_score"].max()), 0)
+    if has_industry:
+        industries = sorted(flagged["industry"].dropna().unique().tolist())
+        industry_pick = f4.multiselect("Industry", industries, default=industries)
+    else:
+        industry_pick = None
+    min_risk = st.slider("Min risk score", 0, int(flagged["risk_score"].max()), 0)
 
     mask = (
         flagged["segment"].isin(seg_pick)
@@ -114,6 +122,8 @@ def render_flagged(scored: pd.DataFrame, use_narrative: bool) -> None:
     )
     if region_pick is not None:
         mask &= flagged["region"].isin(region_pick)
+    if industry_pick is not None:
+        mask &= flagged["industry"].isin(industry_pick)
     view = flagged[mask].sort_values("risk_score", ascending=False)
 
     display_cols = [c for c in FLAGGED_COLUMNS if c in view.columns]
@@ -122,6 +132,7 @@ def render_flagged(scored: pd.DataFrame, use_narrative: bool) -> None:
         hide_index=True,
         use_container_width=True,
         column_config={
+            "mrr": st.column_config.NumberColumn("MRR", format="$%d"),
             "arr": st.column_config.NumberColumn("ARR", format="$%d"),
             "risk_score": st.column_config.NumberColumn("Risk"),
             "top_reason": st.column_config.TextColumn("Top reason", width="large"),
@@ -136,6 +147,17 @@ def render_flagged(scored: pd.DataFrame, use_narrative: bool) -> None:
             f"risk {row['risk_score']}"
         )
         with st.expander(header):
+            if "industry" in row.index:
+                bits = [str(row["segment"])]
+                if pd.notna(row.get("industry")):
+                    bits.append(str(row["industry"]))
+                if pd.notna(row.get("employees")):
+                    bits.append(f"{int(row['employees']):,} employees")
+                if pd.notna(row.get("account_revenue")):
+                    bits.append(f"${int(row['account_revenue']):,} revenue")
+                if pd.notna(row.get("mrr")):
+                    bits.append(f"${int(row['mrr']):,}/mo MRR")
+                st.caption(" · ".join(bits))
             for hit in row["hits"]:
                 st.markdown(f"- **{hit.severity.upper()} · {hit.rule_id}** — {hit.reason}")
             if use_narrative:

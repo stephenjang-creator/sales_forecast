@@ -12,41 +12,43 @@ CRM record. All data is synthetic.
 
 ## Eval scorecard
 
-The bundled dataset (`data/pipeline.csv`, 600 deals, seed 31) encodes real
-**regional behavior** — US deals move fast, EMEA deals run long and linger in
-Proposal, APAC discounts early as normal practice — with anomalies labeled
-relative to each region's norm. So the detector is scored two ways
-(`make eval` / `make eval-region`):
+The bundled dataset (`data/pipeline.csv`, 600 deals, seed 23) models a real B2B
+SaaS book: **MRR-based pricing** ($3,250 floor, ~$3,850 ASP, and a tail of large
+~$10K+ deals that run longer and are less predictable), **firmographics**
+(industry, employees, account revenue), and **regional behavior** — US deals move
+fast, EMEA deals run long and linger in Proposal, APAC discounts early as normal
+practice. Anomalies are labeled relative to each region's norm, so the detector
+is scored two ways (`make eval` / `make eval-region`):
 
 | Metric | Region-agnostic (one global norm) | **Region-aware (each region's norm)** |
 | --- | --- | --- |
-| Precision | 0.764 | **0.908** |
-| Recall | 0.944 | **1.000** |
-| **F1** | **0.844** | **0.952** |
-| Confusion (TP/FP/FN/TN) | 84 / 26 / 5 / 485 | 89 / 9 / 0 / 502 |
+| Precision | 0.763 | **0.929** |
+| Recall | 0.937 | **1.000** |
+| **F1** | **0.841** | **0.963** |
+| Confusion (TP/FP/FN/TN) | 74 / 23 / 5 / 498 | 79 / 6 / 0 / 515 |
 
-Region-aware scoring recovers **+10.8 F1 points** — the two region-sensitive
+Region-aware scoring recovers **+12.2 F1 points** — the two region-sensitive
 rules tell the story:
 
 | Rule (region-aware) | Precision | Recall | vs agnostic |
 | --- | --- | --- | --- |
 | slipped_close_date | 1.000 | 1.000 | — |
-| **stalled_in_stage** | **1.000** | **1.000** | agnostic 0.542 / 0.684 |
-| commit_low_meddpicc | 0.743 | 1.000 | region-independent |
-| late_stage_no_economic_buyer | 0.750 | 1.000 | region-independent |
-| **premature_deep_discount** | **0.421** | 1.000 | agnostic 0.250 prec |
-| imminent_close_no_paper_process | 0.917 | 0.957 | — |
+| **stalled_in_stage** | **1.000** | **1.000** | agnostic 0.611 / 0.524 |
+| commit_low_meddpicc | 0.735 | 1.000 | region-independent |
+| late_stage_no_economic_buyer | 0.818 | 1.000 | region-independent |
+| **premature_deep_discount** | **0.538** | 1.000 | agnostic 0.269 prec |
+| imminent_close_no_paper_process | 0.905 | 1.000 | — |
 
 **Reading the numbers, honestly** (full before/after in [`TUNING.md`](TUNING.md)):
 
 - **`stalled_in_stage`:** the global norm over-flags EMEA's normally-long
   proposals *and* misses NA's fast-region stalls; judging against each region's
-  own norm fixes both (0.54/0.68 → 1.00/1.00).
+  own norm fixes both (0.61/0.52 → 1.00/1.00).
 - **`premature_deep_discount`:** region-aware stops false-flagging APAC's normal
-  early discounts (0.25 → 0.42 precision). The residual false positives are
+  early discounts (0.27 → 0.54 precision). The residual false positives are
   natural 40% catalog discounts in other regions — feature-identical to the real
   ones, so we flag them honestly rather than overfit.
-- **`commit_low_meddpicc` (0.74/1.00) / `late_stage_no_economic_buyer` (0.75/1.00)**
+- **`commit_low_meddpicc` (0.74/1.00) / `late_stage_no_economic_buyer` (0.82/1.00)**
   carry some realistic co-injection overlap and are region-independent (identical
   in both modes).
 
@@ -59,7 +61,7 @@ _(Numbers regenerate with the dataset; `make data && make eval` to refresh.)_
 pip install -r requirements.txt
 
 # 2. (optional) regenerate the labeled dataset — it's already committed
-make data       # python generate_forecast_data.py --n 600 --seed 31 --out data/pipeline.csv
+make data       # python generate_forecast_data.py --n 600 --seed 23 --out data/pipeline.csv
 
 # 3. Run the deterministic-core unit tests
 make test       # pytest -q
@@ -104,7 +106,7 @@ sales_forecast/
 ├── generate_forecast_data.py   # synthetic labeled pipeline (region-aware behavior)
 ├── generate_history.py         # synthetic historical bookings + forward targets
 ├── data/
-│   ├── pipeline.csv            # bundled labeled demo dataset
+│   ├── pipeline.csv            # labeled deals: MRR/ARR, firmographics, MEDDPICC, region
 │   ├── history.csv             # 36 months of actual bookings + quota per region
 │   └── targets.csv             # current + forward quotas per region
 ├── config.py                   # every tunable threshold (+ win-rates/haircut)
@@ -167,7 +169,7 @@ its region's own norms (all tunable in `config.py`):
 | **APAC** | Early deep discounts are normal practice | `premature_deep_discount` is suppressed |
 
 Because the labels are region-relative, region-aware scoring **materially
-outperforms** the naive one-global-norm detector: **F1 0.844 → 0.952** (see the
+outperforms** the naive one-global-norm detector: **F1 0.841 → 0.963** (see the
 scorecard above and [`TUNING.md`](TUNING.md)). It's **off by default** for
 backward-compatible reproducibility; enable it via the UI toggle,
 `engine.run(df, region_aware=True)`, `make eval-region`, or the `region_aware`
@@ -277,12 +279,12 @@ make attainment-dry                          # NO key: deterministic tool rollup
 and get real numbers offline. Sample offline output on the bundled data:
 
 ```
-  NA     This month:   $1,155,381 (39% attain, YoY -53%) [2026-07]
-         This quarter: $5,127,714 (44% attain, YoY -49%) [2026-Q3]
-  EMEA   This month:   $511,829   (28% attain, YoY -70%) [2026-07]
-         This quarter: $4,322,346 (60% attain, YoY -33%) [2026-Q3]
+  NA     This month:   $491,858   (31% attain, YoY -63%) [2026-07]
+         This quarter: $3,483,770 (56% attain, YoY -36%) [2026-Q3]
+  EMEA   This month:   $333,576   (33% attain, YoY -64%) [2026-07]
+         This quarter: $2,076,272 (52% attain, YoY -41%) [2026-Q3]
   …
-  PORTFOLIO  month $2,402,448   quarter $13,863,299
+  PORTFOLIO  month $1,075,741   quarter $7,444,892
 ```
 
 **Read the current period as pace, not a final result.** It's in progress and

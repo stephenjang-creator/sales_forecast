@@ -125,6 +125,30 @@ def _region_of(row: pd.Series) -> str | None:
     return str(row["region"])
 
 
+def _opt_str(row: pd.Series, key: str) -> str | None:
+    """A plain-str column value, or None when the column is absent/blank."""
+    if key not in row or pd.isna(row[key]):
+        return None
+    return str(row[key])
+
+
+def _opt_num(row: pd.Series, key: str, cast=float):
+    """A numeric column value, or None when the column is absent/blank."""
+    if key not in row or pd.isna(row[key]):
+        return None
+    return cast(row[key])
+
+
+def _firmographics(row: pd.Series) -> dict:
+    """Account firmographics (present only if the dataset carries them)."""
+    return {
+        "industry": _opt_str(row, "industry"),
+        "employees": _opt_num(row, "employees", int),
+        "account_revenue": _opt_num(row, "account_revenue", int),
+        "mrr": _opt_num(row, "mrr", float),
+    }
+
+
 def _compact_deal(row: pd.Series) -> dict:
     """A small deal summary safe to return in a list."""
     return {
@@ -132,6 +156,8 @@ def _compact_deal(row: pd.Series) -> dict:
         "account": str(row["account"]),
         "region": _region_of(row),
         "segment": str(row["segment"]),
+        "industry": _opt_str(row, "industry"),
+        "mrr": _opt_num(row, "mrr", float),
         "stage": str(row["stage"]),
         "forecast_category": str(row["forecast_category"]),
         "arr": float(row["arr"]),
@@ -194,6 +220,7 @@ def list_deals(
     segment: str | None = None,
     region: str | None = None,
     stage: str | None = None,
+    industry: str | None = None,
     rep: str | None = None,
     flagged_only: bool = False,
     limit: int = 25,
@@ -202,12 +229,12 @@ def list_deals(
     """List pipeline deals, optionally filtered, highest risk first.
 
     Use to browse or narrow the pipeline before drilling in. Any filter left as
-    None is ignored. Set flagged_only=True to see only at-risk deals. Set
-    region_aware=True to score with the per-region threshold overlay (US flags
-    stalls sooner, EMEA proposals get slack, APAC tolerates early discounts).
-    Returns up to `limit` compact deal summaries (deal_id, account, region,
-    segment, stage, forecast_category, arr, risk_score, predicted_anomaly,
-    top_reason).
+    None is ignored (segment, region, stage, industry, rep). Set
+    flagged_only=True to see only at-risk deals. Set region_aware=True to score
+    with the per-region threshold overlay (US flags stalls sooner, EMEA proposals
+    get slack, APAC tolerates early discounts). Returns up to `limit` compact deal
+    summaries (deal_id, account, region, segment, industry, mrr, stage,
+    forecast_category, arr, risk_score, predicted_anomaly, top_reason).
     """
     try:
         df = _df(region_aware)
@@ -220,6 +247,10 @@ def list_deals(
             mask &= df["region"] == region
         if stage is not None:
             mask &= df["stage"] == stage
+        if industry is not None:
+            if "industry" not in df.columns:
+                return {"error": "No 'industry' column in this dataset; run `make data`."}
+            mask &= df["industry"] == industry
         if rep is not None:
             mask &= df["rep"] == rep
         if flagged_only:
@@ -250,6 +281,7 @@ def assess_deal(deal_id: str, region_aware: bool = False) -> dict:
             "account": str(row["account"]),
             "region": _region_of(row),
             "segment": str(row["segment"]),
+            **_firmographics(row),
             "stage": str(row["stage"]),
             "forecast_category": str(row["forecast_category"]),
             "arr": float(row["arr"]),
@@ -388,6 +420,18 @@ def list_segments() -> list[str] | dict:
     """Distinct segment values present, so an agent can pick a valid filter."""
     try:
         return sorted(str(s) for s in _df()["segment"].dropna().unique())
+    except Exception as exc:  # noqa: BLE001
+        return {"error": str(exc)}
+
+
+@mcp.tool()
+def list_industries() -> list[str] | dict:
+    """Distinct industry values present, so an agent can pick a valid filter."""
+    try:
+        df = _df()
+        if "industry" not in df.columns:
+            return {"error": "No 'industry' column in this dataset; run `make data`."}
+        return sorted(str(s) for s in df["industry"].dropna().unique())
     except Exception as exc:  # noqa: BLE001
         return {"error": str(exc)}
 
