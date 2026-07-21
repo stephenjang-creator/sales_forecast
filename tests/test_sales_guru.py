@@ -67,7 +67,7 @@ def test_deterministic_coaching_from_context() -> None:
 
 def test_deterministic_actions_from_top_actions() -> None:
     plan = {
-        "region": "NA",
+        "region": "NAM",
         "actions": [
             {
                 "priority": 1,
@@ -110,7 +110,7 @@ def test_deterministic_actions_from_top_actions() -> None:
         ],
     }
     out = _deterministic_actions(plan)
-    assert out["region"] == "NA"
+    assert out["region"] == "NAM"
     assert "Pull it forward and close" in out["headline"]  # leads with #1
     a = out["actions"][0]
     assert a["action"] == "Pull it forward and close"
@@ -238,7 +238,7 @@ class _ActionsClient:
                     _block(
                         type="tool_use",
                         name="region_top_actions",
-                        input={"region": "NA", "max_deals": 10},
+                        input={"region": "NAM", "max_deals": 10},
                         id="t1",
                     )
                 ]
@@ -249,7 +249,7 @@ class _ActionsClient:
                     type="tool_use",
                     name="submit_region_actions",
                     input={
-                        "region": "NA",
+                        "region": "NAM",
                         "headline": "Close the fast movers first",
                         "actions": [
                             {
@@ -272,10 +272,10 @@ class _ActionsClient:
 def test_run_region_guru_dispatches_and_submits() -> None:
     async def _run() -> dict:
         async with open_session() as session:
-            return await _run_region_guru(_ActionsClient(), session, "NA", "fake")
+            return await _run_region_guru(_ActionsClient(), session, "NAM", "fake")
 
     result = asyncio.run(_run())
-    assert result["region"] == "NA"
+    assert result["region"] == "NAM"
     assert result["headline"] == "Close the fast movers first"
     # Deals are named by company + MRR, not deal_id.
     assert result["actions"][0]["deals"][0] == "Acme ($8,000/mo)"
@@ -293,10 +293,10 @@ def test_run_region_guru_falls_back_without_submit() -> None:
 
     async def _run() -> dict:
         async with open_session() as session:
-            return await _run_region_guru(_NeverSubmits(), session, "NA", "fake")
+            return await _run_region_guru(_NeverSubmits(), session, "NAM", "fake")
 
     result = asyncio.run(_run())
-    assert result["region"] == "NA"
+    assert result["region"] == "NAM"
     assert result["_fallback"] is True
     assert result["actions"], "fallback must carry the deterministic top actions"
 
@@ -319,7 +319,7 @@ class _ChatClient:
                     _block(
                         type="tool_use",
                         name="region_top_actions",
-                        input={"region": "NA", "max_deals": 10},
+                        input={"region": "NAM", "max_deals": 10},
                         id="c1",
                     )
                 ]
@@ -333,7 +333,7 @@ def test_agent_reply_uses_tools_then_answers() -> None:
     async def _run() -> tuple[str, list]:
         async with open_session() as session:
             tools = await anthropic_tool_schema(session)
-            messages = [{"role": "user", "content": "What are my top 3 things in NA?"}]
+            messages = [{"role": "user", "content": "What are my top 3 things in NAM?"}]
             reply = await _agent_reply(_ChatClient(), session, "fake", tools, messages)
             return reply, messages
 
@@ -353,10 +353,10 @@ def test_gather_helpers_over_stdio() -> None:
     async def _run() -> tuple[dict, dict]:
         async with open_session() as session:
             ctx = await gather_deal_context(session, deal_id)
-            plan = await gather_region_actions(session, "NA")
+            plan = await gather_region_actions(session, "NAM")
             return ctx, plan
 
     ctx, plan = asyncio.run(_run())
     assert ctx["assessment"]["deal_id"] == deal_id
     assert ctx["plays"]["plays"]
-    assert plan["region"] == "NA" and "actions" in plan
+    assert plan["region"] == "NAM" and "actions" in plan

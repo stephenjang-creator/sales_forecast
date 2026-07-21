@@ -126,8 +126,8 @@ def test_recommend_plays_not_found() -> None:
 
 
 def test_region_top_actions_grouped_and_ranked() -> None:
-    plan = srv.region_top_actions("NA", max_deals=10)
-    assert plan["region"] == "NA"
+    plan = srv.region_top_actions("NAM", max_deals=10)
+    assert plan["region"] == "NAM"
     assert plan["active_deals"] > 0
     actions = plan["actions"]
     assert actions, "expected at least one action"
@@ -173,19 +173,19 @@ def test_owner_and_manager_surfaced_and_region_disjoint() -> None:
 
 def test_region_top_actions_deal_budget_bounds_and_lists_all() -> None:
     # A small budget surfaces exactly that many deals, each fully listed.
-    plan = srv.region_top_actions("NA", max_deals=5)
+    plan = srv.region_top_actions("NAM", max_deals=5)
     assert plan["surfaced_deals"] == 5
     assert sum(a["deal_count"] for a in plan["actions"]) == 5
     assert plan["actionable_deals"] >= plan["surfaced_deals"]
     # Raising the budget surfaces more (no hidden tail at the low budget).
-    bigger = srv.region_top_actions("NA", max_deals=15)
+    bigger = srv.region_top_actions("NAM", max_deals=15)
     assert bigger["surfaced_deals"] > 5
 
 
 def test_region_top_actions_vp_call_shortlist_is_capped_and_senior() -> None:
     import config
 
-    plan = srv.region_top_actions("NA")
+    plan = srv.region_top_actions("NAM")
     calls = plan["vp_should_join_calls"]
     assert len(calls) <= config.VP_CALL_CAPACITY  # calls are scarce
     for c in calls:
@@ -248,7 +248,7 @@ def test_next_meeting_date_surfaced() -> None:
     full = srv.assess_deal(deal["deal_id"])
     assert "next_meeting_date" in full
     # A call-worthy deal is open, so most of the shortlist can be joined.
-    for region in ("NA", "EMEA"):
+    for region in ("NAM", "EMEA"):
         plan = srv.region_top_actions(region)
         for c in plan["vp_should_join_calls"]:
             assert "next_meeting_date" in c
@@ -320,8 +320,8 @@ def test_assess_region_emea_sane() -> None:
 
 
 def test_assess_region_na_not_dropped() -> None:
-    # "NA" collides with pandas' NaN sentinel; the loader must preserve it.
-    result = srv.assess_region("NA")
+    # "NAM" collides with pandas' NaN sentinel; the loader must preserve it.
+    result = srv.assess_region("NAM")
     assert "error" not in result
     assert result["deals"] > 0
 
@@ -351,7 +351,7 @@ def test_get_scorecard_shape() -> None:
 
 def test_list_regions_and_segments() -> None:
     regions = srv.list_regions()
-    assert set(regions) == {"NA", "EMEA", "APAC", "LATAM"}
+    assert set(regions) == {"NAM", "EMEA", "APAC", "LATAM"}
     segments = srv.list_segments()
     assert set(segments) == {"Enterprise", "Mid-Market", "SMB"}
 
@@ -392,8 +392,8 @@ def test_region_aware_defaults_match_baseline() -> None:
 
 
 def test_bookings_rollup_na_region_has_quota_and_yoy() -> None:
-    # Regression: "NA" in history/targets must survive pandas' NaN parsing.
-    result = srv.bookings_rollup("quarter", "NA")
+    # Regression: "NAM" in history/targets must survive pandas' NaN parsing.
+    result = srv.bookings_rollup("quarter", "NAM")
     assert result["quota"] > 0
     assert result["projected_attainment_pct"] is not None
     assert result.get("yoy_period_actual", {}).get("bookings", 0) > 0
@@ -416,9 +416,9 @@ def test_pipeline_by_period_marks_current() -> None:
 
 
 def test_pipeline_by_period_fast_mover_uplift() -> None:
-    # NA has open fast movers; their uplift must lift risk_adjusted above the
+    # NAM has open fast movers; their uplift must lift risk_adjusted above the
     # naive (weighted - full haircut) floor, and fast_mover_open_arr is surfaced.
-    cur = next(b for b in srv.pipeline_by_period("quarter", "NA")["periods"] if b["is_current"])
+    cur = next(b for b in srv.pipeline_by_period("quarter", "NAM")["periods"] if b["is_current"])
     assert cur["fast_mover_open_arr"] > 0
     # Uplift pushes risk-adjusted above weighted-minus-haircut-on-everything.
     floor = cur["weighted_open_arr"] * (1 - 0.40)
@@ -446,7 +446,7 @@ def test_region_tools_degrade_without_region_column(tmp_path, monkeypatch) -> No
     monkeypatch.setenv("FORECAST_CSV", str(csv))
     srv.reload()
     try:
-        assert "error" in srv.assess_region("NA")
+        assert "error" in srv.assess_region("NAM")
         assert "error" in srv.list_regions()
         # Non-region tools still work.
         assert isinstance(srv.list_segments(), list)

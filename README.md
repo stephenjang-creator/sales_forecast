@@ -124,7 +124,7 @@ rules tell the story:
 **Reading the numbers, honestly** (full before/after in [`TUNING.md`](TUNING.md)):
 
 - **`stalled_in_stage`:** the global norm over-flags EMEA's normally-long
-  proposals *and* misses NA's fast-region stalls; judging against each region's
+  proposals *and* misses NAM's fast-region stalls; judging against each region's
   own norm fixes both (0.78/0.74 → 1.00/1.00).
 - **`premature_deep_discount`:** region-aware stops false-flagging APAC's normal
   early discounts (0.59 → 0.83 precision). The residual false positives are
@@ -359,7 +359,7 @@ its region's own norms (all tunable in `config.py`):
 
 | Region | Behavior (baked into the data) | Effect on rules |
 | --- | --- | --- |
-| **NA (US)** | Deals move fast (short time-in-stage) | `stalled_in_stage` uses NA's short norm → catches fast-region stalls the global norm misses |
+| **NAM (US)** | Deals move fast (short time-in-stage) | `stalled_in_stage` uses NAM's short norm → catches fast-region stalls the global norm misses |
 | **EMEA** | Deals run long; proposals linger (~70-day norm) | `stalled_in_stage` uses EMEA's long norm → stops over-flagging normal long proposals |
 | **APAC** | Early deep discounts are normal practice | `premature_deep_discount` is suppressed |
 
@@ -481,7 +481,7 @@ make attainment-dry                          # NO key: deterministic tool rollup
 and get real numbers offline. Sample offline output on the bundled data:
 
 ```
-  NA     This month:   $608,894   (49% attain, YoY -41%) [2026-07]
+  NAM     This month:   $608,894   (49% attain, YoY -41%) [2026-07]
          This quarter: $2,850,602 (58% attain, YoY -33%) [2026-Q3]
   EMEA   This month:   $192,811   (24% attain, YoY -74%) [2026-07]
          This quarter: $1,571,170 (51% attain, YoY -43%) [2026-Q3]
@@ -523,7 +523,7 @@ flag; the plays *respond* to the flags the rules already set.
 - **Coach one deal** (`--deal D-10023`): reads `assess_deal` + `recommend_plays`,
   then personalizes the plays to the deal — a talk track for the next call,
   sharpened next steps, the right owner.
-- **Prioritize a region** (`--region NA` / `--all`): reads `region_top_actions`
+- **Prioritize a region** (`--region NAM` / `--all`): reads `region_top_actions`
   and gives the VP the **top deals to act on today** — the highest-priority
   `max_deals` (default 10) region-wide, grouped by the play to run. Every surfaced
   deal is **listed by company + MRR** (how reps think) — no hidden "+N more" tail;
@@ -552,7 +552,7 @@ flag; the plays *respond* to the flags the rules already set.
   (calls are scarce) — each with its owner and **`next_meeting_date`** so the VP
   knows whose call it is and exactly when (or that none is booked).
 - **Chat** (`--chat`): an interactive session with every detector tool. Ask
-  _"what are my top 3 things in NA?"_ and then keep prompting — _"tell me more
+  _"what are my top 3 things in NAM?"_ and then keep prompting — _"tell me more
   about #2"_, _"who owns the Acme deal?"_, _"assess Umbra Solutions"_ — the
   conversation persists, so follow-ups build on what came before.
 
@@ -560,8 +560,8 @@ flag; the plays *respond* to the flags the rules already set.
 export ANTHROPIC_API_KEY=sk-...
 make guru                                    # every region's prioritized actions
 python -m agents.sales_guru --deal D-10023   # coach one deal
-python -m agents.sales_guru --region NA      # one region's worklist (--max-deals to change)
-python -m agents.sales_guru --chat --region NA   # ask, then keep prompting
+python -m agents.sales_guru --region NAM      # one region's worklist (--max-deals to change)
+python -m agents.sales_guru --chat --region NAM   # ask, then keep prompting
 python -m agents.sales_guru --all --json     # machine-readable
 
 make guru-dry                                # NO key: deterministic worklist

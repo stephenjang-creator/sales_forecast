@@ -63,7 +63,7 @@ except ImportError:  # pragma: no cover
 # ----------------------------------------------------------------------
 SEGMENTS = ["Enterprise", "Mid-Market", "SMB"]
 SEG_WEIGHTS = [0.20, 0.50, 0.30]
-REGIONS = ["NA", "EMEA", "APAC", "LATAM"]
+REGIONS = ["NAM", "EMEA", "APAC", "LATAM"]  # NAM (not "NA": collides with pandas NaN)
 REGION_WEIGHTS = [0.45, 0.30, 0.15, 0.10]
 
 # ----------------------------------------------------------------------

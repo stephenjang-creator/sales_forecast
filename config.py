@@ -99,7 +99,7 @@ ESTIMATE_BAND = 0.20
 # --------------------------------------------------------------------------- #
 # Typical days in each open stage, per region. Falls back to STAGE_NORMAL_DAYS.
 REGION_STAGE_NORMAL_DAYS = {
-    "NA": {"Discovery": 12, "Qualification": 14, "Proposal": 11, "Negotiation": 10},
+    "NAM": {"Discovery": 12, "Qualification": 14, "Proposal": 11, "Negotiation": 10},
     "EMEA": {"Discovery": 30, "Qualification": 36, "Proposal": 70, "Negotiation": 34},
     "APAC": {"Discovery": 21, "Qualification": 25, "Proposal": 20, "Negotiation": 18},
     "LATAM": {"Discovery": 24, "Qualification": 28, "Proposal": 23, "Negotiation": 21},

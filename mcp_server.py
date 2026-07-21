@@ -368,7 +368,7 @@ def assess_segment(segment: str, region_aware: bool = False) -> dict:
 
 @mcp.tool()
 def assess_region(region: str, region_aware: bool = False) -> dict:
-    """Risk-exposure roll-up for a region (NA / EMEA / APAC / LATAM).
+    """Risk-exposure roll-up for a region (NAM / EMEA / APAC / LATAM).
 
     Same shape as assess_segment: deals, flagged, ARR totals, at_risk_pct_of_commit,
     top_reasons, avg_meddpicc_confidence. Set region_aware=True to score with the

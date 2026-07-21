@@ -64,12 +64,12 @@ def main() -> int:
     _run(guru + ["--deal", deal, "--dry-run"])
 
     _header(3, "A region's VP worklist — top deals by play, calls to join + when")
-    _run(guru + ["--region", "NA", "--dry-run"])
+    _run(guru + ["--region", "NAM", "--dry-run"])
 
     _header(4, "Signals: value-touch worklist + meeting-at-risk deals")
     _run(guru + ["--region", "LATAM", "--dry-run"])
     print()
-    _run([PY, "-c", "import mcp_server as s; print(s.signals_summary(region='NA'))"])
+    _run([PY, "-c", "import mcp_server as s; print(s.signals_summary(region='NAM'))"])
 
     _header(5, "Region performance forecast (month/quarter, risk- + mover-adjusted)")
     _run([PY, "-m", "agents.attainment", "--all", "--dry-run"])
@@ -77,7 +77,7 @@ def main() -> int:
     print("\n" + "=" * 72)
     print("  Next, with an ANTHROPIC_API_KEY (the LLM layer):")
     print(f"    python -m agents.sales_guru --deal {deal}     # personalized coaching")
-    print("    python -m agents.sales_guru --chat --region NA  # ask, then keep prompting")
+    print("    python -m agents.sales_guru --chat --region NAM  # ask, then keep prompting")
     print("    make app                                        # the Streamlit UI")
     print("=" * 72)
     return 0

@@ -25,7 +25,7 @@ from detector.rules import RuleHit
 _DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 _DEFAULT_CSV = _DATA_DIR / "pipeline.csv"
 
-REGION_ORDER = ["NA", "EMEA", "APAC", "LATAM"]
+REGION_ORDER = ["NAM", "EMEA", "APAC", "LATAM"]
 
 # Pretty labels for the rule ids (the raw id is mono-styled in the drawer).
 RULE_LABELS = {

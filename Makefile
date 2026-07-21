@@ -49,7 +49,7 @@ guru-dry:
 	python -m agents.sales_guru $(if $(DEAL),--deal $(DEAL),--all) --dry-run
 
 # Interactive guru: ask for your top things, then keep prompting. Needs a key.
-# Pass REGION=NA to seed the first question.
+# Pass REGION=NAM to seed the first question.
 guru-chat:
 	python -m agents.sales_guru --chat $(if $(REGION),--region $(REGION),)
 

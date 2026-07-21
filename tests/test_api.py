@@ -17,7 +17,7 @@ client = TestClient(app)
 
 def test_full_payload_shape() -> None:
     p = forecast.full_payload()
-    assert p["regionOrder"] == ["NA", "EMEA", "APAC", "LATAM"]
+    assert p["regionOrder"] == ["NAM", "EMEA", "APAC", "LATAM"]
     assert p["deals"], "expected flagged deals"
     # Server sends the open-pipeline KPIs; the timeframe-scoped Booked tile is
     # composed client-side from bookedDeals + the header timeframe control.

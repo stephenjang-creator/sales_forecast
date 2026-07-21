@@ -204,13 +204,13 @@ def test_imminent_close_ignores_closed() -> None:
 # Region-aware thresholds (opt-in overlay; default off = unchanged)
 # --------------------------------------------------------------------------- #
 def test_stalled_region_aware_na_flags_sooner() -> None:
-    # NA norm for Discovery is 12 (fast), global is 21. 40 days: clean under the
-    # global 2.5x threshold (52.5), but stalled against NA's norm (12*2.5=30).
-    base = base_row(stage="Discovery", days_in_stage=40, region="NA")
+    # NAM norm for Discovery is 12 (fast), global is 21. 40 days: clean under the
+    # global 2.5x threshold (52.5), but stalled against NAM's norm (12*2.5=30).
+    base = base_row(stage="Discovery", days_in_stage=40, region="NAM")
     assert rule_stalled_in_stage(base) is None  # default (global norm)
     hit = rule_stalled_in_stage({**base, "_region_aware": True})
     assert hit is not None and hit.rule_id == "stalled_in_stage"
-    assert "NA norm" in hit.reason
+    assert "NAM norm" in hit.reason
 
 
 def test_stalled_region_aware_emea_more_slack() -> None:
@@ -236,15 +236,15 @@ def test_premature_region_aware_apac_tolerated() -> None:
 
 def test_premature_region_aware_na_still_flags() -> None:
     # Non-tolerant region is unaffected by the region-aware flag.
-    row = base_row(stage="Discovery", discount_pct=0.40, region="NA", _region_aware=True)
+    row = base_row(stage="Discovery", discount_pct=0.40, region="NAM", _region_aware=True)
     assert rule_premature_deep_discount(row) is not None
 
 
 def test_engine_region_aware_does_not_leak_flag_column() -> None:
-    rows = [base_row(deal_id="d", stage="Discovery", days_in_stage=40, region="NA")]
+    rows = [base_row(deal_id="d", stage="Discovery", days_in_stage=40, region="NAM")]
     scored = run(pd.DataFrame(rows), region_aware=True)
     assert "_region_aware" not in scored.columns
-    assert scored.iloc[0]["predicted_anomaly"]  # NA norm (12) flags this stall
+    assert scored.iloc[0]["predicted_anomaly"]  # NAM norm (12) flags this stall
 
 
 # --------------------------------------------------------------------------- #

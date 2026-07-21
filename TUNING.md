@@ -3,8 +3,8 @@
 The demo data encodes real regional behavior — **US deals move fast, EMEA deals
 run long and linger in Proposal, APAC discounts early as normal practice** (see
 `generate_forecast_data.py`, which imports the region norms from `config.py`).
-Anomalies are labeled *relative to each region's norm*: a "stalled" NA deal sits
-3–5× NA's short norm, a "stalled" EMEA deal sits 3–5× EMEA's long norm, and APAC
+Anomalies are labeled *relative to each region's norm*: a "stalled" NAM deal sits
+3–5× NAM's short norm, a "stalled" EMEA deal sits 3–5× EMEA's long norm, and APAC
 early discounts are simply not anomalies.
 
 That makes region-awareness measurable: a detector using one global norm both
@@ -32,7 +32,7 @@ Enabling region-aware scoring recovers **+11.3 F1 points** on this data.
 
 The global norm fails two ways at once: it **over-flags** EMEA proposals that sit
 50–70 days (normal for EMEA, but past the global 2.5× line → false positives) and
-**misses** NA deals stalled 30–50 days (well past NA's fast norm, but under the
+**misses** NAM deals stalled 30–50 days (well past NAM's fast norm, but under the
 global line → false negatives). Judging `days_in_stage` against
 `config.REGION_STAGE_NORMAL_DAYS[region][stage]` (× the global `STALE_MULTIPLIER`
 of 2.5) removes both.

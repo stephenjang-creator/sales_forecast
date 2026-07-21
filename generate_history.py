@@ -26,13 +26,13 @@ from datetime import date
 
 import pandas as pd
 
-REGIONS = ["NA", "EMEA", "APAC", "LATAM"]
+REGIONS = ["NAM", "EMEA", "APAC", "LATAM"]  # NAM (not "NA": collides with pandas NaN)
 
 # Rough current monthly bookings run-rate per region (before seasonality/noise).
 # Calibrated to the pipeline's deal economics (ASP ~$3,850 MRR ≈ $46k ARR) so
 # current-period attainment reads sensibly against projected pipeline bookings.
-BASE_MONTHLY = {"NA": 1_480_000, "EMEA": 940_000, "APAC": 470_000, "LATAM": 310_000}
-AVG_DEAL = {"NA": 60_000, "EMEA": 52_000, "APAC": 46_000, "LATAM": 44_000}
+BASE_MONTHLY = {"NAM": 1_480_000, "EMEA": 940_000, "APAC": 470_000, "LATAM": 310_000}
+AVG_DEAL = {"NAM": 60_000, "EMEA": 52_000, "APAC": 46_000, "LATAM": 44_000}
 
 YOY_GROWTH = 0.15  # business grows ~15% year over year
 QUARTER_SEASONALITY = {1: 0.90, 2: 1.00, 3: 1.05, 4: 1.20}  # Q4 heavy, Q1 soft
