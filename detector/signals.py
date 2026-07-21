@@ -25,6 +25,11 @@ import config
 from detector.rules import _int, _is_open, _str
 
 
+def _has_next_meeting(row: dict) -> bool:
+    """True when a next meeting date is on the calendar."""
+    return _str(row, "next_meeting_date") != ""
+
+
 @dataclass(frozen=True)
 class Signal:
     """A single fired deal signal.
@@ -100,8 +105,34 @@ def signal_complex_deal(row: dict) -> Signal | None:
     return None
 
 
+def signal_meeting_at_risk(row: dict) -> Signal | None:
+    """No next meeting, or one more than a week out => momentum at risk.
+
+    A weak next step (or none) is a leading indicator that a deal is drifting.
+    The fix is a value touch: reach out with something useful and set a sooner
+    next step. Reads the precomputed ``days_to_next_meeting`` so it stays stable
+    regardless of when the detector runs.
+    """
+    if not _is_open(row):
+        return None
+    if not _has_next_meeting(row):
+        return Signal(
+            "meeting_at_risk",
+            "risk",
+            "No next meeting booked -- run a value touch to set a near-term next step.",
+        )
+    days = _int(row, "days_to_next_meeting")
+    if days > config.NEXT_MEETING_MAX_DAYS:
+        reason = (
+            f"Next meeting is {days} days out (> {config.NEXT_MEETING_MAX_DAYS}-day "
+            f"cadence) -- run a value touch to pull a sooner next step in."
+        )
+        return Signal("meeting_at_risk", "risk", reason)
+    return None
+
+
 # Registry: engine.py iterates this without knowing individual signal names.
-ALL_SIGNALS = [signal_fast_mover, signal_complex_deal]
+ALL_SIGNALS = [signal_fast_mover, signal_complex_deal, signal_meeting_at_risk]
 
 
 def classify(row: dict) -> list[Signal]:

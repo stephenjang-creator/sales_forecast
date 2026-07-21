@@ -100,6 +100,11 @@ CHAMPION_SENIOR_MIN = "Director"  # this rank or higher => senior/empowered
 SIMPLE_APPROVAL_MAX_LAYERS = 1  # <= this AND no C-suite => simple process
 COMPLEX_APPROVAL_MIN_LAYERS = 3  # >= this OR C-suite => complex/long process
 
+# Meeting cadence: an open deal whose next meeting is more than this many days
+# out (or has none booked) is losing momentum -- surface it so the rep runs a
+# value touch to pull a sooner next step in. A signal, not a scored anomaly.
+NEXT_MEETING_MAX_DAYS = 7
+
 # --------------------------------------------------------------------------- #
 # Regional "top actions" worklist (sales guru --region).
 # A regional VP wants the few highest-leverage moves for the day, where one move

@@ -30,7 +30,7 @@ import config
 import periods
 from detector.engine import load, run
 from detector.evaluate import overall_metrics, per_rule_metrics, scorecard_markdown
-from detector.plays import FAST_MOVER_PLAY, Play, primary_hit, primary_play
+from detector.plays import FAST_MOVER_PLAY, VALUE_TOUCH_PLAY, Play, primary_hit, primary_play
 from detector.plays import recommend_plays as _recommend_plays
 from detector.rules import RuleHit
 
@@ -482,9 +482,10 @@ def signals_summary(region: str | None = None, segment: str | None = None) -> di
     """Counts + open ARR of the non-anomaly deal signals across the pipeline.
 
     Signals are the other half of risk: `fast_mover` (empowered champion + simple
-    decision process -> likely to close quickly) and `complex_deal` (C-suite or
-    3+ approval layers -> longer, less predictable cycle). Optionally filter by
-    region or segment. Use `list_deals(signal="fast_mover")` to pull the deals.
+    decision process -> likely to close quickly), `complex_deal` (C-suite or 3+
+    approval layers -> longer cycle), and `meeting_at_risk` (next meeting > a week
+    out or none booked -> momentum slipping, run a value touch). Optionally filter
+    by region or segment. Use `list_deals(signal="meeting_at_risk")` to pull them.
     """
     try:
         df = _df()
@@ -505,9 +506,11 @@ def signals_summary(region: str | None = None, segment: str | None = None) -> di
             "segment": segment or "ALL",
             "fast_mover": _count("fast_mover"),
             "complex_deal": _count("complex_deal"),
+            "meeting_at_risk": _count("meeting_at_risk"),
             "note": (
                 "fast_mover = Director+ champion & simple process; complex_deal = "
-                "C-suite or 3+ approval layers (expect a longer cycle)."
+                "C-suite or 3+ approval layers; meeting_at_risk = next meeting > a "
+                "week out or none booked (run a value touch)."
             ),
         }
     except Exception as exc:  # noqa: BLE001
@@ -544,7 +547,11 @@ def recommend_plays(deal_id: str, region_aware: bool = False) -> dict:
             return {"error": f"deal_id {deal_id!r} not found"}
         row = matches.iloc[0]
         hits = _hits_of(row)
-        plays = _recommend_plays(hits)
+        play_dicts = [_play_dict(p) for p in _recommend_plays(hits)]
+        # A far-out / missing next meeting is a signal, not an anomaly, but it's
+        # still actionable -- append its value-touch play.
+        if _has_signal(row, "meeting_at_risk"):
+            play_dicts.append(_play_dict(VALUE_TOUCH_PLAY))
         return {
             "deal_id": str(row["deal_id"]),
             "account": str(row["account"]),
@@ -556,7 +563,7 @@ def recommend_plays(deal_id: str, region_aware: bool = False) -> dict:
             "next_meeting_date": _opt_str(row, "next_meeting_date"),
             "risk_score": int(row["risk_score"]),
             "hits": [asdict(hit) for hit in hits],
-            "plays": [_play_dict(p) for p in plays],
+            "plays": play_dicts,
             "note": (
                 "Deterministic plays mapped from the deal's rule hits; they "
                 "respond to flags, they do not change them. Human-in-the-loop."
@@ -566,12 +573,22 @@ def recommend_plays(deal_id: str, region_aware: bool = False) -> dict:
         return {"error": str(exc)}
 
 
+def _signal_reason(row: pd.Series, signal_id: str, default: str = "") -> str:
+    """A named signal's own reason for a row, if it fired (else ``default``)."""
+    for sig in row.get("signals", []) or []:
+        if sig.signal_id == signal_id:
+            return sig.reason
+    return default
+
+
+def _has_signal(row: pd.Series, signal_id: str) -> bool:
+    """True when the named signal fired for a row."""
+    return any(s.signal_id == signal_id for s in (row.get("signals", []) or []))
+
+
 def _fast_reason(row: pd.Series) -> str:
     """The fast_mover signal's own reason for a row, if present."""
-    for sig in row.get("signals", []) or []:
-        if sig.signal_id == "fast_mover":
-            return sig.reason
-    return "Empowered champion and a simple decision process."
+    return _signal_reason(row, "fast_mover", "Empowered champion and a simple decision process.")
 
 
 def _champion_rank(row: pd.Series) -> int:
@@ -662,6 +679,8 @@ def _candidate_action(row: pd.Series):
         return primary_play(_hits_of(row)), "risk", hit.severity, hit.reason
     if "fast_mover" in row and bool(row["fast_mover"]):
         return FAST_MOVER_PLAY, "opportunity", "opportunity", _fast_reason(row)
+    if _has_signal(row, "meeting_at_risk"):
+        return VALUE_TOUCH_PLAY, "risk", "medium", _signal_reason(row, "meeting_at_risk")
     return None
 
 

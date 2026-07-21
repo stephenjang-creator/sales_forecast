@@ -51,26 +51,27 @@ class RuleHit:
 # --------------------------------------------------------------------------- #
 # Small typed accessors -- pandas hands us numpy scalars; normalize them.
 # --------------------------------------------------------------------------- #
+def _is_blank(val) -> bool:
+    """True for None, empty string, or a float NaN (a blank CSV cell)."""
+    return val is None or val == "" or (isinstance(val, float) and val != val)
+
+
 def _int(row: dict, key: str) -> int:
-    """Return ``row[key]`` as a plain int (0 if missing/blank)."""
+    """Return ``row[key]`` as a plain int (0 if missing/blank/NaN)."""
     val = row.get(key)
-    if val is None or val == "":
-        return 0
-    return int(val)
+    return 0 if _is_blank(val) else int(val)
 
 
 def _float(row: dict, key: str) -> float:
-    """Return ``row[key]`` as a plain float (0.0 if missing/blank)."""
+    """Return ``row[key]`` as a plain float (0.0 if missing/blank/NaN)."""
     val = row.get(key)
-    if val is None or val == "":
-        return 0.0
-    return float(val)
+    return 0.0 if _is_blank(val) else float(val)
 
 
 def _str(row: dict, key: str) -> str:
-    """Return ``row[key]`` as a stripped str ('' if missing)."""
+    """Return ``row[key]`` as a stripped str ('' if missing/blank/NaN)."""
     val = row.get(key)
-    return "" if val is None else str(val).strip()
+    return "" if _is_blank(val) else str(val).strip()
 
 
 def _is_open(row: dict) -> bool:

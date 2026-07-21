@@ -7,6 +7,7 @@ from detector.plays import (
     FAST_MOVER_PLAY,
     PLAYBOOK,
     STALLED_SLIPPED_RULES,
+    VALUE_TOUCH_PLAY,
     primary_play,
     recommend_plays,
 )
@@ -58,6 +59,14 @@ def test_primary_play_none_when_no_playable_hits() -> None:
 def test_fast_mover_play_shape() -> None:
     assert FAST_MOVER_PLAY.rule_id == "fast_mover"
     assert FAST_MOVER_PLAY.actions and FAST_MOVER_PLAY.owner
+
+
+def test_value_touch_play_shape() -> None:
+    # The play for the meeting_at_risk signal; not an anomaly, so not in PLAYBOOK.
+    assert VALUE_TOUCH_PLAY.rule_id == "meeting_at_risk"
+    assert "meeting_at_risk" not in PLAYBOOK
+    assert VALUE_TOUCH_PLAY.actions and VALUE_TOUCH_PLAY.owner
+    assert "value touch" in VALUE_TOUCH_PLAY.title.lower()
 
 
 def test_stalled_slipped_rules_are_known_plays() -> None:

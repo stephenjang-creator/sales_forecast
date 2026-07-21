@@ -54,10 +54,12 @@ def run(df: pd.DataFrame, region_aware: bool = False) -> pd.DataFrame:
         risk_score: int, summed severity weights of those hits.
         predicted_anomaly: bool, True when at least one rule fired.
         top_reason: str, the highest-severity hit's reason ('' if none).
-    Plus non-anomaly deal signals (opportunity/duration classification):
+    Plus non-anomaly deal signals (opportunity/duration/cadence classification):
         signals: list[Signal] (possibly empty).
         fast_mover: bool, empowered champion + simple process.
         complex_deal: bool, C-suite / many-approval process => longer cycle.
+        meeting_at_risk: bool, next meeting > a week out (or none) => run a
+            value touch.
     """
     out = df.copy()
     rows = out.to_dict("records")
@@ -74,6 +76,9 @@ def run(df: pd.DataFrame, region_aware: bool = False) -> pd.DataFrame:
     out["signals"] = all_signals
     out["fast_mover"] = [any(s.signal_id == "fast_mover" for s in sigs) for sigs in all_signals]
     out["complex_deal"] = [any(s.signal_id == "complex_deal" for s in sigs) for sigs in all_signals]
+    out["meeting_at_risk"] = [
+        any(s.signal_id == "meeting_at_risk" for s in sigs) for sigs in all_signals
+    ]
     return out
 
 

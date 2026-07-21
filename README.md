@@ -178,13 +178,17 @@ deterministic, non-anomaly classifiers driven by **champion seniority** and
 | --- | --- | --- |
 | **`fast_mover`** | opportunity | Champion is **Director+** *and* the process is **simple** (≤1 approval layer, no C-suite gate) — likely to close quickly |
 | **`complex_deal`** | risk / duration | **C-suite** sign-off *or* **≥3** approval layers — expect a longer, less predictable cycle (the data reflects it: these run longer) |
+| **`meeting_at_risk`** | risk / cadence | Next meeting is **more than a week out** (`NEXT_MEETING_MAX_DAYS`) *or* **none is booked** — momentum is slipping; run a **value touch** to pull a sooner next step in |
 
-Signals aren't scored against `is_anomaly` (a fast mover is *good*) — they're
-deterministic derivations surfaced for triage. `engine.run` adds `signals`,
-`fast_mover`, and `complex_deal` columns; the UI shows counts + tables and
-per-deal badges; and the MCP layer exposes them (`signals_summary`,
-`list_deals(signal="fast_mover")`, and `assess_deal`'s `decision_profile` +
-`signals`). Thresholds live in `config.py`.
+Signals aren't scored against `is_anomaly` (a fast mover is *good*, and
+`meeting_at_risk` fires on ~40% of open deals — far too broad to be a scored
+anomaly) — they're deterministic derivations surfaced for triage. `engine.run`
+adds `signals`, `fast_mover`, `complex_deal`, and `meeting_at_risk` columns; the
+UI shows counts + tables and per-deal badges; and the MCP layer exposes them
+(`signals_summary`, `list_deals(signal="meeting_at_risk")`, and `assess_deal`'s
+`decision_profile` + `signals`). `meeting_at_risk` maps to a **value-touch play**,
+so it shows up in `recommend_plays` and the regional worklist alongside the
+anomaly plays. Thresholds live in `config.py`.
 
 ### Region-aware thresholds (opt-in)
 

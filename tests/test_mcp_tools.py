@@ -66,9 +66,25 @@ def test_signals_surfaced() -> None:
     assert any(s["signal_id"] == "fast_mover" for s in full["signals"])
 
     summary = srv.signals_summary(region="EMEA")
-    for sig in ("fast_mover", "complex_deal"):
+    for sig in ("fast_mover", "complex_deal", "meeting_at_risk"):
         assert {"count", "arr"} == set(summary[sig].keys())
     json.dumps(summary)
+
+
+def test_meeting_at_risk_signal_and_value_touch_play() -> None:
+    # The cadence signal is filterable and carries the next_meeting_date.
+    at_risk = srv.list_deals(signal="meeting_at_risk", limit=5)
+    assert at_risk, "expected some meeting-at-risk deals"
+    assert all("meeting_at_risk" in d["signals"] for d in at_risk)
+    # recommend_plays appends the value-touch play for a meeting-at-risk deal.
+    df = srv._df()
+    mask = df["meeting_at_risk"]
+    deal_id = str(df[mask].iloc[0]["deal_id"])
+    plays = srv.recommend_plays(deal_id)
+    # A clean-but-at-risk deal still gets the value touch; a flagged one gets it
+    # appended after its anomaly plays.
+    if "error" not in plays:
+        assert any(p["rule_id"] == "meeting_at_risk" for p in plays["plays"])
 
 
 def test_firmographics_and_mrr() -> None:

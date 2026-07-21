@@ -146,7 +146,9 @@ seed 42); yours will differ if you point `FORECAST_CSV` at your own export.
   them; `assess_deal(...)` returns a deal's `decision_profile` and `signals`.
 - **What they mean:** `fast_mover` = Director+ champion and a simple process (few
   approvals, no C-suite) → likely to close quickly. `complex_deal` = C-suite gate
-  or 3+ approval layers → expect a longer, less predictable cycle.
+  or 3+ approval layers → expect a longer, less predictable cycle. `meeting_at_risk`
+  = next meeting more than a week out (or none booked) → momentum slipping; run a
+  **value touch** (surfaces in `recommend_plays` and the regional worklist).
 - **Narration tip:** these are opportunity/duration signals, *not* anomalies —
   read them alongside the risk flags to prioritize (a fast mover with no risk
   flag is a clean pull-forward; a complex deal forecast as Commit is worth a look).

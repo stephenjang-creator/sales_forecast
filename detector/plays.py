@@ -138,6 +138,24 @@ FAST_MOVER_PLAY = Play(
     owner="rep",
 )
 
+# The motion for a deal whose next meeting is too far out (or missing): a value
+# touch to pull a sooner next step in. Not an anomaly play -- it responds to the
+# ``meeting_at_risk`` signal -- so it lives here with the other signal play.
+# ``rule_id`` doubles as the signal id.
+VALUE_TOUCH_PLAY = Play(
+    rule_id="meeting_at_risk",
+    title="Run a value touch to book a sooner next step",
+    why="A next meeting more than a week out (or none) means momentum is slipping.",
+    actions=(
+        "Reach out with a value touch -- a relevant insight, ROI data point, or "
+        "customer story -- not a 'just checking in' note.",
+        "Propose a specific next step in the next few days tied to the buyer's "
+        "priorities, and get it on the calendar with an agenda.",
+        "If the champion goes quiet, multi-thread to a second contact to keep the " "deal moving.",
+    ),
+    owner="rep",
+)
+
 # Rules that mean a deal has come off the rails (stalled or slipped) -- the
 # "get it back on track" bucket of a regional action plan.
 STALLED_SLIPPED_RULES = ("slipped_close_date", "stalled_in_stage")

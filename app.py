@@ -167,8 +167,9 @@ def render_flagged(scored: pd.DataFrame, use_narrative: bool) -> None:
             st.caption(f"📅 Next meeting: {nm}" if pd.notna(nm) else "📅 No meeting booked")
             for hit in row["hits"]:
                 st.markdown(f"- **{hit.severity.upper()} · {hit.rule_id}** — {hit.reason}")
+            signal_icons = {"fast_mover": "⚡", "complex_deal": "🧭", "meeting_at_risk": "📅"}
             for sig in row.get("signals", []) or []:
-                icon = "⚡" if sig.signal_id == "fast_mover" else "🧭"
+                icon = signal_icons.get(sig.signal_id, "•")
                 st.markdown(f"- {icon} **{sig.signal_id}** — {sig.reason}")
             plays = recommend_plays(list(row["hits"]))
             if plays:

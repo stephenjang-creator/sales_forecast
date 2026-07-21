@@ -462,9 +462,13 @@ def build(n=600, seed=42, anomaly_rate=0.18):
 
     # Assign next-meeting dates from a dedicated RNG so this new column does not
     # shift the main random sequence (every other column stays reproducible).
+    # days_to_next_meeting is precomputed (like days_to_close) so the detector
+    # reads a stable int instead of re-diffing dates against a drifting "today".
     meeting_rng = random.Random(seed + 777)
     for rec in records:
-        rec["next_meeting_date"] = _next_meeting(rec, today, meeting_rng)
+        nm = _next_meeting(rec, today, meeting_rng)
+        rec["next_meeting_date"] = nm
+        rec["days_to_next_meeting"] = (nm - today).days if nm != "" else ""
 
     df = pd.DataFrame(records)
     df["anomaly_types"] = df["anomaly_types"].apply(lambda x: "|".join(x))
@@ -476,7 +480,7 @@ def build(n=600, seed=42, anomaly_rate=0.18):
         "mrr", "arr", "stage", "forecast_category",
         "rep", "created_date", "stage_entry_date", "orig_close_date",
         "close_date", "next_meeting_date", "close_date_pushes", "discount_pct",
-        "days_open", "days_in_stage", "days_to_close", "slip_days",
+        "days_open", "days_in_stage", "days_to_close", "days_to_next_meeting", "slip_days",
         *[f"m_{k}" for k in MEDDPICC],
         "meddpicc_total", "meddpicc_confidence",
         "is_anomaly", "anomaly_types",
