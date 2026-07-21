@@ -160,6 +160,9 @@ def render_flagged(scored: pd.DataFrame, use_narrative: bool) -> None:
                 st.caption(" · ".join(bits))
             for hit in row["hits"]:
                 st.markdown(f"- **{hit.severity.upper()} · {hit.rule_id}** — {hit.reason}")
+            for sig in row.get("signals", []) or []:
+                icon = "⚡" if sig.signal_id == "fast_mover" else "🧭"
+                st.markdown(f"- {icon} **{sig.signal_id}** — {sig.reason}")
             if use_narrative:
                 if not narrative.is_available():
                     st.info("Set ANTHROPIC_API_KEY to enable LLM briefs.")
@@ -167,6 +170,52 @@ def render_flagged(scored: pd.DataFrame, use_narrative: bool) -> None:
                     with st.spinner("Writing brief…"):
                         text = narrative.brief(row.to_dict(), list(row["hits"]))
                     st.write(text or "_(no brief returned)_")
+
+
+SIGNAL_COLUMNS = [
+    "deal_id",
+    "account",
+    "region",
+    "segment",
+    "industry",
+    "champion_seniority",
+    "approval_layers",
+    "mrr",
+    "stage",
+    "forecast_category",
+]
+
+
+def render_signals(scored: pd.DataFrame) -> None:
+    """Non-anomaly deal signals: fast movers and complex (long-cycle) deals."""
+    if "fast_mover" not in scored.columns:
+        return
+    fast = scored[scored["fast_mover"]]
+    complex_ = scored[scored["complex_deal"]]
+    st.subheader("Deal signals")
+    c1, c2 = st.columns(2)
+    c1.metric("⚡ Fast movers", len(fast))
+    c2.metric("🧭 Complex deals", len(complex_))
+
+    cols = [c for c in SIGNAL_COLUMNS if c in scored.columns]
+    cfg = {
+        "mrr": st.column_config.NumberColumn("MRR", format="$%d"),
+        "approval_layers": st.column_config.NumberColumn("Approvals"),
+    }
+    with st.expander(f"⚡ Fast movers ({len(fast)}) — Director+ champion & simple process"):
+        st.dataframe(
+            fast.sort_values("mrr", ascending=False)[cols],
+            hide_index=True,
+            use_container_width=True,
+            column_config=cfg,
+        )
+    with st.expander(f"🧭 Complex deals ({len(complex_)}) — C-suite / 3+ approvals, longer cycle"):
+        st.dataframe(
+            complex_.sort_values("mrr", ascending=False)[cols],
+            hide_index=True,
+            use_container_width=True,
+            column_config=cfg,
+        )
 
 
 def main() -> None:
@@ -200,6 +249,8 @@ def main() -> None:
         render_scorecard(scored)
         st.markdown("---")
         render_flagged(scored, use_narrative)
+        st.markdown("---")
+        render_signals(scored)
     else:
         upload = st.file_uploader(
             "Upload a pipeline CSV (same schema; labels optional)", type=["csv"]
@@ -214,6 +265,8 @@ def main() -> None:
         else:
             st.caption("No label columns found — scorecard hidden; showing flags only.")
         render_flagged(scored, use_narrative)
+        st.markdown("---")
+        render_signals(scored)
 
 
 if __name__ == "__main__":

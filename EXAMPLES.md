@@ -137,3 +137,16 @@ seed 42); yours will differ if you point `FORECAST_CSV` at your own export.
 - **Narration tip:** it changes what's flagged, so `get_scorecard(region_aware=True)`
   shifts vs the baseline — precision up, recall down where a region tolerates the
   behavior. Say which mode you used.
+
+### 15. Deal signals (fast movers & complex deals)
+> **"Which deals will move fast, and which will drag?"**
+
+- **Calls:** `signals_summary(region="NA")` for counts + ARR, then
+  `list_deals(signal="fast_mover")` or `list_deals(signal="complex_deal")` to pull
+  them; `assess_deal(...)` returns a deal's `decision_profile` and `signals`.
+- **What they mean:** `fast_mover` = Director+ champion and a simple process (few
+  approvals, no C-suite) → likely to close quickly. `complex_deal` = C-suite gate
+  or 3+ approval layers → expect a longer, less predictable cycle.
+- **Narration tip:** these are opportunity/duration signals, *not* anomalies —
+  read them alongside the risk flags to prioritize (a fast mover with no risk
+  flag is a clean pull-forward; a complex deal forecast as Commit is worth a look).

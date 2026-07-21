@@ -16,18 +16,18 @@ Full scorecards: [`eval_before.md`](eval_before.md) (agnostic),
 
 | Metric | Region-agnostic (naive) | **Region-aware** |
 | --- | --- | --- |
-| Precision | 0.763 | **0.929** |
-| Recall | 0.937 | **1.000** |
-| **F1** | **0.841** | **0.963** |
-| Confusion (TP/FP/FN/TN) | 74 / 23 / 5 / 498 | 79 / 6 / 0 / 515 |
+| Precision | 0.736 | **0.922** |
+| Recall | 0.964 | **0.988** |
+| **F1** | **0.835** | **0.954** |
+| Confusion (TP/FP/FN/TN) | 81 / 29 / 3 / 487 | 83 / 7 / 1 / 509 |
 
-Enabling region-aware scoring recovers **+12.2 F1 points** on this data.
+Enabling region-aware scoring recovers **+11.9 F1 points** on this data.
 
 ## `stalled_in_stage` — the headline
 
 | | precision | recall |
 | --- | --- | --- |
-| Region-agnostic | 0.611 | 0.524 |
+| Region-agnostic | 0.542 | 0.684 |
 | Region-aware | **1.000** | **1.000** |
 
 The global norm fails two ways at once: it **over-flags** EMEA proposals that sit
@@ -41,8 +41,8 @@ of 2.5) removes both.
 
 | | precision | recall | fired |
 | --- | --- | --- | --- |
-| Region-agnostic | 0.269 | 1.000 | 26 |
-| Region-aware | **0.538** | 1.000 | 13 |
+| Region-agnostic | 0.300 | 1.000 | 30 |
+| Region-aware | **0.600** | 1.000 | 15 |
 
 APAC's frequent early discounts are normal practice, so the agnostic rule
 false-flags them; region-aware suppresses `premature_deep_discount` for APAC
@@ -54,8 +54,8 @@ we flag them honestly rather than overfit.
 ## The other rules
 
 `slipped_close_date` and `imminent_close_no_paper_process` are near-perfect and
-region-independent. `commit_low_meddpicc` (0.74 / 1.00) and
-`late_stage_no_economic_buyer` (0.82 / 1.00) carry some co-injection overlap —
+region-independent. `commit_low_meddpicc` (0.71 / 0.91) and
+`late_stage_no_economic_buyer` (0.86 / 1.00) carry some co-injection overlap —
 deals that trip a second rule's condition — which is realistic risk, not a bug.
 They score identically in both modes (they don't depend on region).
 

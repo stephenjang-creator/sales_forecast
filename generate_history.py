@@ -31,7 +31,7 @@ REGIONS = ["NA", "EMEA", "APAC", "LATAM"]
 # Rough current monthly bookings run-rate per region (before seasonality/noise).
 # Calibrated to the pipeline's deal economics (ASP ~$3,850 MRR ≈ $46k ARR) so
 # current-period attainment reads sensibly against projected pipeline bookings.
-BASE_MONTHLY = {"NA": 1_900_000, "EMEA": 1_200_000, "APAC": 600_000, "LATAM": 400_000}
+BASE_MONTHLY = {"NA": 1_480_000, "EMEA": 940_000, "APAC": 470_000, "LATAM": 310_000}
 AVG_DEAL = {"NA": 60_000, "EMEA": 52_000, "APAC": 46_000, "LATAM": 44_000}
 
 YOY_GROWTH = 0.15  # business grows ~15% year over year

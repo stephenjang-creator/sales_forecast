@@ -45,10 +45,26 @@ def test_list_deals_shape_and_cap() -> None:
         "close_date",
         "risk_score",
         "predicted_anomaly",
+        "signals",
         "top_reason",
     }
     assert set(deals[0].keys()) == expected
     json.dumps(deals)  # must be JSON-serializable
+
+
+def test_signals_surfaced() -> None:
+    # Fast-mover filter + assess_deal decision profile & signals + summary.
+    fast = srv.list_deals(signal="fast_mover", limit=5)
+    assert fast, "expected some fast movers"
+    assert all("fast_mover" in d["signals"] for d in fast)
+    full = srv.assess_deal(fast[0]["deal_id"])
+    assert full["decision_profile"]["champion_seniority"] is not None
+    assert any(s["signal_id"] == "fast_mover" for s in full["signals"])
+
+    summary = srv.signals_summary(region="EMEA")
+    for sig in ("fast_mover", "complex_deal"):
+        assert {"count", "arr"} == set(summary[sig].keys())
+    json.dumps(summary)
 
 
 def test_firmographics_and_mrr() -> None:

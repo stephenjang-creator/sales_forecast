@@ -5,9 +5,11 @@ Synthetic pipeline generator for a RevOps Forecast Anomaly Detector.
 
 Produces a labeled dataset where each opportunity carries:
   - CRM fields (segment, region, stage, dates, rep, discount)
-  - Deal economics (MRR-based: $3,250 floor, ~$3,850 ASP, a tail of large
-    ~$10K+ deals that run longer and are less predictable; arr = mrr * 12)
+  - Deal economics (MRR-based; MRR scales with company headcount, $3,250 floor,
+    a tail of large ~$10K+ deals that run longer and less predictable; arr = mrr*12)
   - Firmographics (industry, employees, account_revenue)
+  - Decision profile (champion_seniority, approval_layers, csuite_approval) --
+    drives the fast-mover / complex-deal signals in detector.signals
   - Full MEDDPICC qualification scores (0-3 per element) + a rollup
   - A ground-truth `is_anomaly` flag and `anomaly_types` list
 
@@ -19,7 +21,7 @@ Runtime deps: pandas + config.py (region norms); faker optional (falls back to
 a built-in name/company pool if not installed).
 
 Usage:
-    python generate_forecast_data.py --n 600 --seed 23 --out pipeline.csv
+    python generate_forecast_data.py --n 600 --seed 28 --out pipeline.csv
 """
 
 import argparse
@@ -70,15 +72,15 @@ REGION_WEIGHTS = [0.45, 0.30, 0.15, 0.10]
 # are less predictable. arr = mrr * 12.
 # ----------------------------------------------------------------------
 MRR_FLOOR = 3250
-# segment -> (floor, exponential mean spread, cap) for a floor + skew draw
-SEGMENT_MRR = {
-    "SMB": (3250, 95, 3800),
-    "Mid-Market": (3300, 380, 4800),
-    "Enterprise": (3950, 780, 6800),  # standard enterprise (non-big)
-}
-BIG_DEAL_MRR = (8000, 14000)          # the "$10K" deals
-ENTERPRISE_BIG_RATE = 0.10            # share of Enterprise deals that are big
-BIG_DEAL_MRR_FLOOR = 8000             # mrr at/above this => "big deal" behavior
+# MRR scales with company size (headcount): larger accounts buy higher MRR, so
+# the big ~$10K deals emerge from the largest firms. ASP stays ~$3,850 because
+# most of the book is SMB/Mid-Market near the floor. arr = mrr * 12.
+MRR_SIZE_SPAN = 8_000     # max size-driven uplift over the floor (USD/mo)
+MRR_SIZE_EXP = 6.0        # convex: only large accounts get the big uplift
+MRR_NOISE = 200           # per-deal exponential noise mean
+MRR_CAP = 16_000
+BIG_DEAL_MRR_FLOOR = 8000  # mrr at/above this => "big deal" behavior
+_EMP_RANGE = (10, 80_000)  # headcount range spanning all segments
 
 # Firmographics by segment. Revenue is derived from headcount so the two agree.
 SEGMENT_EMPLOYEES = {
@@ -93,6 +95,20 @@ INDUSTRIES = [
     "Education", "Logistics", "Professional Services",
 ]
 INDUSTRY_WEIGHTS = [0.20, 0.14, 0.12, 0.11, 0.10, 0.09, 0.07, 0.07, 0.05, 0.05]
+
+# Decision profile: champion seniority + approval complexity, by segment.
+# Enterprises skew to more senior champions but heavier approval processes.
+SEG_CHAMPION_WEIGHTS = {  # over config.CHAMPION_LEVELS (IC..C-Suite)
+    "SMB": [0.15, 0.35, 0.30, 0.15, 0.05],
+    "Mid-Market": [0.10, 0.30, 0.35, 0.18, 0.07],
+    "Enterprise": [0.08, 0.22, 0.35, 0.25, 0.10],
+}
+SEG_APPROVAL_LAYERS = {  # (layer counts, weights)
+    "SMB": ([1, 2, 3, 4], [0.55, 0.30, 0.12, 0.03]),
+    "Mid-Market": ([1, 2, 3, 4], [0.30, 0.40, 0.22, 0.08]),
+    "Enterprise": ([1, 2, 3, 4], [0.10, 0.32, 0.36, 0.22]),
+}
+SEG_CSUITE_PROB = {"SMB": 0.05, "Mid-Market": 0.15, "Enterprise": 0.42}
 STAGES = ["Discovery", "Qualification", "Proposal", "Negotiation",
           "Closed Won", "Closed Lost"]
 OPEN_STAGES = STAGES[:4]
@@ -110,13 +126,28 @@ def _region_stage_norm(region, stage):
     return table.get(stage, STAGE_NORMAL_DAYS.get(stage, 20))
 
 
-def _mrr(segment):
-    """Monthly recurring revenue for a deal. Most cluster near the $3,250 floor;
-    ~12% of Enterprise deals are large ~$10K+ deals."""
-    if segment == "Enterprise" and random.random() < ENTERPRISE_BIG_RATE:
-        return round(random.uniform(*BIG_DEAL_MRR), -2)
-    floor, spread, cap = SEGMENT_MRR[segment]
-    return round(min(cap, floor + random.expovariate(1 / spread)), -1)
+def _size_factor(employees):
+    """Company size as a 0..1 factor on a log headcount scale."""
+    lo, hi = _EMP_RANGE
+    e = max(lo, min(hi, employees))
+    return (math.log(e) - math.log(lo)) / (math.log(hi) - math.log(lo))
+
+
+def _mrr(employees):
+    """MRR driven by company size -- larger accounts buy higher MRR. Anchored at
+    the $3,250 floor; only the largest firms reach the big ~$10K+ deals."""
+    size = _size_factor(employees)
+    mrr = MRR_FLOOR + MRR_SIZE_SPAN * (size**MRR_SIZE_EXP) + random.expovariate(1 / MRR_NOISE)
+    return round(min(mrr, MRR_CAP), -1)
+
+
+def _decision_profile(segment):
+    """Champion seniority, approval-layer count, and C-suite gate for a deal."""
+    champion = random.choices(config.CHAMPION_LEVELS, weights=SEG_CHAMPION_WEIGHTS[segment])[0]
+    layers_opts, layers_w = SEG_APPROVAL_LAYERS[segment]
+    approval_layers = random.choices(layers_opts, weights=layers_w)[0]
+    csuite = 1 if random.random() < SEG_CSUITE_PROB[segment] else 0
+    return champion, approval_layers, csuite
 
 
 def _log_uniform(lo, hi):
@@ -186,21 +217,35 @@ def _meddpicc_rollup(scores):
 # ----------------------------------------------------------------------
 def _base_record(i, today):
     seg = random.choices(SEGMENTS, weights=SEG_WEIGHTS)[0]
-    mrr = _mrr(seg)
-    arr = mrr * 12
-    is_big = mrr >= BIG_DEAL_MRR_FLOOR
     stage = random.choices(STAGES, weights=STAGE_WEIGHTS)[0]
     region = random.choices(REGIONS, weights=REGION_WEIGHTS)[0]
     employees, account_revenue, industry = _firmographics(seg)
+    mrr = _mrr(employees)  # larger accounts buy higher MRR
+    arr = mrr * 12
+    is_big = mrr >= BIG_DEAL_MRR_FLOOR
 
-    # Big deals run a longer sales cycle.
-    created = today - timedelta(days=random.randint(60, 320) if is_big
-                                else random.randint(15, 200))
-    # base close date: past for closed, future for open (big deals close farther out)
+    champion_seniority, approval_layers, csuite_approval = _decision_profile(seg)
+    is_senior_champ = config.CHAMPION_LEVELS.index(champion_seniority) >= config.CHAMPION_LEVELS.index(
+        config.CHAMPION_SENIOR_MIN
+    )
+    is_simple = approval_layers <= config.SIMPLE_APPROVAL_MAX_LAYERS and csuite_approval == 0
+    is_complex = csuite_approval == 1 or approval_layers >= config.COMPLEX_APPROVAL_MIN_LAYERS
+    is_fast = is_senior_champ and is_simple
+    slow = is_big or is_complex  # big or complex deals run a longer, less predictable cycle
+
+    if slow:
+        created = today - timedelta(days=random.randint(60, 320))
+    elif is_fast:
+        created = today - timedelta(days=random.randint(10, 90))
+    else:
+        created = today - timedelta(days=random.randint(15, 200))
+    # base close date: past for closed, future for open
     if stage in ("Closed Won", "Closed Lost"):
         close = created + timedelta(days=random.randint(20, 120))
-    elif is_big:
-        close = today + timedelta(days=random.randint(30, 150))
+    elif slow:
+        close = today + timedelta(days=random.randint(35, 150))
+    elif is_fast:
+        close = today + timedelta(days=random.randint(5, 40))
     else:
         close = today + timedelta(days=random.randint(5, 90))
 
@@ -219,8 +264,8 @@ def _base_record(i, today):
         fcat = random.choice(["Best Case", "Pipeline"])
     else:
         fcat = random.choice(["Pipeline", "Omitted"])
-    # Big deals are less predictable -- reps hedge them out of Commit.
-    if is_big and fcat == "Commit" and random.random() < 0.6:
+    # Big/complex deals are less predictable -- reps hedge them out of Commit.
+    if slow and fcat == "Commit" and random.random() < 0.6:
         fcat = "Best Case"
 
     rec = {
@@ -231,6 +276,9 @@ def _base_record(i, today):
         "industry": industry,
         "employees": employees,
         "account_revenue": account_revenue,
+        "champion_seniority": champion_seniority,
+        "approval_layers": approval_layers,
+        "csuite_approval": csuite_approval,
         "mrr": mrr,
         "arr": arr,
         "stage": stage,
@@ -393,6 +441,7 @@ def build(n=600, seed=42, anomaly_rate=0.18):
     col_order = [
         "deal_id", "account", "segment", "region",
         "industry", "employees", "account_revenue",
+        "champion_seniority", "approval_layers", "csuite_approval",
         "mrr", "arr", "stage", "forecast_category",
         "rep", "created_date", "stage_entry_date", "orig_close_date",
         "close_date", "close_date_pushes", "discount_pct",
@@ -407,7 +456,7 @@ def build(n=600, seed=42, anomaly_rate=0.18):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--n", type=int, default=600)
-    ap.add_argument("--seed", type=int, default=23)
+    ap.add_argument("--seed", type=int, default=28)
     ap.add_argument("--anomaly-rate", type=float, default=0.18)
     ap.add_argument("--out", default="pipeline.csv")
     args = ap.parse_args()

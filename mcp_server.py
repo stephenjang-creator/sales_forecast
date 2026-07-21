@@ -149,6 +149,11 @@ def _firmographics(row: pd.Series) -> dict:
     }
 
 
+def _signal_ids(row: pd.Series) -> list[str]:
+    """The signal ids fired for a row (fast_mover / complex_deal)."""
+    return [s.signal_id for s in row["signals"]] if "signals" in row else []
+
+
 def _compact_deal(row: pd.Series) -> dict:
     """A small deal summary safe to return in a list."""
     return {
@@ -164,6 +169,7 @@ def _compact_deal(row: pd.Series) -> dict:
         "close_date": str(row["close_date"]) if "close_date" in row else None,
         "risk_score": int(row["risk_score"]),
         "predicted_anomaly": bool(row["predicted_anomaly"]),
+        "signals": _signal_ids(row),
         "top_reason": str(row["top_reason"]) if row["top_reason"] else "",
     }
 
@@ -223,6 +229,7 @@ def list_deals(
     industry: str | None = None,
     rep: str | None = None,
     flagged_only: bool = False,
+    signal: str | None = None,
     limit: int = 25,
     region_aware: bool = False,
 ) -> list[dict] | dict:
@@ -230,17 +237,22 @@ def list_deals(
 
     Use to browse or narrow the pipeline before drilling in. Any filter left as
     None is ignored (segment, region, stage, industry, rep). Set
-    flagged_only=True to see only at-risk deals. Set region_aware=True to score
-    with the per-region threshold overlay (US flags stalls sooner, EMEA proposals
-    get slack, APAC tolerates early discounts). Returns up to `limit` compact deal
+    flagged_only=True to see only at-risk (anomaly) deals, or signal="fast_mover"
+    / "complex_deal" to filter by deal signal. Set region_aware=True to score with
+    the per-region threshold overlay (US flags stalls sooner, EMEA proposals get
+    slack, APAC tolerates early discounts). Returns up to `limit` compact deal
     summaries (deal_id, account, region, segment, industry, mrr, stage,
-    forecast_category, arr, risk_score, predicted_anomaly, top_reason).
+    forecast_category, arr, risk_score, predicted_anomaly, signals, top_reason).
     """
     try:
         df = _df(region_aware)
         if region is not None and not _has_region():
             return {"error": "No 'region' column in this dataset; run `make data`."}
         mask = pd.Series(True, index=df.index)
+        if signal is not None:
+            if "signals" not in df.columns:
+                return {"error": "No signals in this dataset; run `make data`."}
+            mask &= df["signals"].apply(lambda sigs: any(s.signal_id == signal for s in sigs))
         if segment is not None:
             mask &= df["segment"] == segment
         if region is not None:
@@ -282,12 +294,22 @@ def assess_deal(deal_id: str, region_aware: bool = False) -> dict:
             "region": _region_of(row),
             "segment": str(row["segment"]),
             **_firmographics(row),
+            "decision_profile": {
+                "champion_seniority": _opt_str(row, "champion_seniority"),
+                "approval_layers": _opt_num(row, "approval_layers", int),
+                "csuite_approval": (
+                    bool(_opt_num(row, "csuite_approval", int))
+                    if _opt_num(row, "csuite_approval", int) is not None
+                    else None
+                ),
+            },
             "stage": str(row["stage"]),
             "forecast_category": str(row["forecast_category"]),
             "arr": float(row["arr"]),
             "meddpicc_confidence": int(row["meddpicc_confidence"]),
             "meddpicc": {el: int(row[col]) for el, col in _MEDDPICC_COLS.items()},
             "hits": [asdict(hit) for hit in _hits_of(row)],
+            "signals": [asdict(sig) for sig in row["signals"]] if "signals" in row else [],
             "risk_score": int(row["risk_score"]),
             "predicted_anomaly": bool(row["predicted_anomaly"]),
         }
@@ -432,6 +454,43 @@ def list_industries() -> list[str] | dict:
         if "industry" not in df.columns:
             return {"error": "No 'industry' column in this dataset; run `make data`."}
         return sorted(str(s) for s in df["industry"].dropna().unique())
+    except Exception as exc:  # noqa: BLE001
+        return {"error": str(exc)}
+
+
+@mcp.tool()
+def signals_summary(region: str | None = None, segment: str | None = None) -> dict:
+    """Counts + open ARR of the non-anomaly deal signals across the pipeline.
+
+    Signals are the other half of risk: `fast_mover` (empowered champion + simple
+    decision process -> likely to close quickly) and `complex_deal` (C-suite or
+    3+ approval layers -> longer, less predictable cycle). Optionally filter by
+    region or segment. Use `list_deals(signal="fast_mover")` to pull the deals.
+    """
+    try:
+        df = _df()
+        if "signals" not in df.columns:
+            return {"error": "No signals in this dataset; run `make data`."}
+        sub = df
+        if region is not None:
+            sub = sub[sub["region"] == region]
+        if segment is not None:
+            sub = sub[sub["segment"] == segment]
+
+        def _count(sig_id: str) -> dict:
+            mask = sub["signals"].apply(lambda sigs: any(s.signal_id == sig_id for s in sigs))
+            return {"count": int(mask.sum()), "arr": float(sub.loc[mask, "arr"].sum())}
+
+        return {
+            "region": region or "ALL",
+            "segment": segment or "ALL",
+            "fast_mover": _count("fast_mover"),
+            "complex_deal": _count("complex_deal"),
+            "note": (
+                "fast_mover = Director+ champion & simple process; complex_deal = "
+                "C-suite or 3+ approval layers (expect a longer cycle)."
+            ),
+        }
     except Exception as exc:  # noqa: BLE001
         return {"error": str(exc)}
 

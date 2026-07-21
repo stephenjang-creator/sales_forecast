@@ -15,6 +15,7 @@ import pandas as pd
 
 import config
 from detector.rules import ALL_RULES, RuleHit
+from detector.signals import classify
 
 
 def evaluate_row(row: dict) -> list[RuleHit]:
@@ -48,11 +49,15 @@ def run(df: pd.DataFrame, region_aware: bool = False) -> pd.DataFrame:
     is off by default so the scorecard stays region-agnostic; the flag is passed
     to each rule via the row dict, keeping rules pure functions of their input.
 
-    Appends four columns and returns a copy (flagged and unflagged rows alike):
+    Appends risk columns and returns a copy (flagged and unflagged rows alike):
         hits: list[RuleHit] fired for the deal (possibly empty).
         risk_score: int, summed severity weights of those hits.
         predicted_anomaly: bool, True when at least one rule fired.
         top_reason: str, the highest-severity hit's reason ('' if none).
+    Plus non-anomaly deal signals (opportunity/duration classification):
+        signals: list[Signal] (possibly empty).
+        fast_mover: bool, empowered champion + simple process.
+        complex_deal: bool, C-suite / many-approval process => longer cycle.
     """
     out = df.copy()
     rows = out.to_dict("records")
@@ -64,6 +69,11 @@ def run(df: pd.DataFrame, region_aware: bool = False) -> pd.DataFrame:
     out["risk_score"] = [_risk_score(hits) for hits in all_hits]
     out["predicted_anomaly"] = [len(hits) > 0 for hits in all_hits]
     out["top_reason"] = [_top_reason(hits) for hits in all_hits]
+
+    all_signals = [classify(row) for row in rows]
+    out["signals"] = all_signals
+    out["fast_mover"] = [any(s.signal_id == "fast_mover" for s in sigs) for sigs in all_signals]
+    out["complex_deal"] = [any(s.signal_id == "complex_deal" for s in sigs) for sigs in all_signals]
     return out
 
 

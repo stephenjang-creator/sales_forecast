@@ -12,43 +12,45 @@ CRM record. All data is synthetic.
 
 ## Eval scorecard
 
-The bundled dataset (`data/pipeline.csv`, 600 deals, seed 23) models a real B2B
-SaaS book: **MRR-based pricing** ($3,250 floor, ~$3,850 ASP, and a tail of large
-~$10K+ deals that run longer and are less predictable), **firmographics**
-(industry, employees, account revenue), and **regional behavior** — US deals move
-fast, EMEA deals run long and linger in Proposal, APAC discounts early as normal
-practice. Anomalies are labeled relative to each region's norm, so the detector
-is scored two ways (`make eval` / `make eval-region`):
+The bundled dataset (`data/pipeline.csv`, 600 deals, seed 28) models a real B2B
+SaaS book: **MRR-based pricing that scales with company size** ($3,250 floor,
+~$4,050 blended ASP, larger accounts buy higher MRR — up to the ~$10K+ deals that
+run longer and are less predictable), **firmographics** (industry, employees,
+account revenue), a **decision profile** (champion seniority + approval
+complexity), and **regional behavior** — US deals move fast, EMEA deals run long
+and linger in Proposal, APAC discounts early as normal practice. Anomalies are
+labeled relative to each region's norm, so the detector is scored two ways
+(`make eval` / `make eval-region`):
 
 | Metric | Region-agnostic (one global norm) | **Region-aware (each region's norm)** |
 | --- | --- | --- |
-| Precision | 0.763 | **0.929** |
-| Recall | 0.937 | **1.000** |
-| **F1** | **0.841** | **0.963** |
-| Confusion (TP/FP/FN/TN) | 74 / 23 / 5 / 498 | 79 / 6 / 0 / 515 |
+| Precision | 0.736 | **0.922** |
+| Recall | 0.964 | **0.988** |
+| **F1** | **0.835** | **0.954** |
+| Confusion (TP/FP/FN/TN) | 81 / 29 / 3 / 487 | 83 / 7 / 1 / 509 |
 
-Region-aware scoring recovers **+12.2 F1 points** — the two region-sensitive
+Region-aware scoring recovers **+11.9 F1 points** — the two region-sensitive
 rules tell the story:
 
 | Rule (region-aware) | Precision | Recall | vs agnostic |
 | --- | --- | --- | --- |
 | slipped_close_date | 1.000 | 1.000 | — |
-| **stalled_in_stage** | **1.000** | **1.000** | agnostic 0.611 / 0.524 |
-| commit_low_meddpicc | 0.735 | 1.000 | region-independent |
-| late_stage_no_economic_buyer | 0.818 | 1.000 | region-independent |
-| **premature_deep_discount** | **0.538** | 1.000 | agnostic 0.269 prec |
-| imminent_close_no_paper_process | 0.905 | 1.000 | — |
+| **stalled_in_stage** | **1.000** | **1.000** | agnostic 0.542 / 0.684 |
+| commit_low_meddpicc | 0.714 | 0.909 | region-independent |
+| late_stage_no_economic_buyer | 0.857 | 1.000 | region-independent |
+| **premature_deep_discount** | **0.600** | 1.000 | agnostic 0.300 prec |
+| imminent_close_no_paper_process | 0.909 | 0.952 | — |
 
 **Reading the numbers, honestly** (full before/after in [`TUNING.md`](TUNING.md)):
 
 - **`stalled_in_stage`:** the global norm over-flags EMEA's normally-long
   proposals *and* misses NA's fast-region stalls; judging against each region's
-  own norm fixes both (0.61/0.52 → 1.00/1.00).
+  own norm fixes both (0.54/0.68 → 1.00/1.00).
 - **`premature_deep_discount`:** region-aware stops false-flagging APAC's normal
-  early discounts (0.27 → 0.54 precision). The residual false positives are
+  early discounts (0.30 → 0.60 precision). The residual false positives are
   natural 40% catalog discounts in other regions — feature-identical to the real
   ones, so we flag them honestly rather than overfit.
-- **`commit_low_meddpicc` (0.74/1.00) / `late_stage_no_economic_buyer` (0.82/1.00)**
+- **`commit_low_meddpicc` (0.71/0.91) / `late_stage_no_economic_buyer` (0.86/1.00)**
   carry some realistic co-injection overlap and are region-independent (identical
   in both modes).
 
@@ -61,7 +63,7 @@ _(Numbers regenerate with the dataset; `make data && make eval` to refresh.)_
 pip install -r requirements.txt
 
 # 2. (optional) regenerate the labeled dataset — it's already committed
-make data       # python generate_forecast_data.py --n 600 --seed 23 --out data/pipeline.csv
+make data       # python generate_forecast_data.py --n 600 --seed 28 --out data/pipeline.csv
 
 # 3. Run the deterministic-core unit tests
 make test       # pytest -q
@@ -112,8 +114,9 @@ sales_forecast/
 ├── config.py                   # every tunable threshold (+ win-rates/haircut)
 ├── periods.py                  # time bucketing, history rollups, MoM/QoQ/YoY
 ├── detector/
-│   ├── rules.py                # pure rule functions + ALL_RULES registry
-│   ├── engine.py               # run rules over a DataFrame → risk columns
+│   ├── rules.py                # pure anomaly rules + ALL_RULES registry
+│   ├── signals.py              # non-anomaly signals (fast movers / complex deals)
+│   ├── engine.py               # run rules + signals over a DataFrame → columns
 │   ├── evaluate.py             # score vs. ground truth; scorecard_markdown()
 │   └── narrative.py            # optional, offline-safe LLM briefs
 ├── agents/                     # attainment estimation layer (over the MCP tools)
@@ -122,6 +125,7 @@ sales_forecast/
 │   └── attainment.py           # one agent per region + portfolio roll-up
 ├── tests/
 │   ├── test_rules.py           # a firing row + a clean row per rule
+│   ├── test_signals.py         # fast-mover / complex-deal signal classifiers
 │   ├── test_mcp_tools.py       # each MCP tool called directly
 │   ├── test_periods.py         # period math, history rollups, comparisons
 │   └── test_agents.py          # baseline math + stdio round-trip + agent loop
@@ -155,6 +159,26 @@ sales_forecast/
   schema; labels optional — the scorecard hides itself when labels are absent).
 
 LLM briefs sit behind a per-deal toggle, so the app is fully usable without a key.
+A **Deal signals** section surfaces fast movers and complex deals (below).
+
+## Deal signals (opportunities, not just risk)
+
+The anomaly rules flag *risk*. `detector/signals.py` adds the other half —
+deterministic, non-anomaly classifiers driven by **champion seniority** and
+**decision-process complexity** (`champion_seniority`, `approval_layers`,
+`csuite_approval` in the data):
+
+| Signal | Kind | Fires when |
+| --- | --- | --- |
+| **`fast_mover`** | opportunity | Champion is **Director+** *and* the process is **simple** (≤1 approval layer, no C-suite gate) — likely to close quickly |
+| **`complex_deal`** | risk / duration | **C-suite** sign-off *or* **≥3** approval layers — expect a longer, less predictable cycle (the data reflects it: these run longer) |
+
+Signals aren't scored against `is_anomaly` (a fast mover is *good*) — they're
+deterministic derivations surfaced for triage. `engine.run` adds `signals`,
+`fast_mover`, and `complex_deal` columns; the UI shows counts + tables and
+per-deal badges; and the MCP layer exposes them (`signals_summary`,
+`list_deals(signal="fast_mover")`, and `assess_deal`'s `decision_profile` +
+`signals`). Thresholds live in `config.py`.
 
 ### Region-aware thresholds (opt-in)
 
@@ -169,7 +193,7 @@ its region's own norms (all tunable in `config.py`):
 | **APAC** | Early deep discounts are normal practice | `premature_deep_discount` is suppressed |
 
 Because the labels are region-relative, region-aware scoring **materially
-outperforms** the naive one-global-norm detector: **F1 0.841 → 0.963** (see the
+outperforms** the naive one-global-norm detector: **F1 0.835 → 0.954** (see the
 scorecard above and [`TUNING.md`](TUNING.md)). It's **off by default** for
 backward-compatible reproducibility; enable it via the UI toggle,
 `engine.run(df, region_aware=True)`, `make eval-region`, or the `region_aware`
@@ -279,12 +303,12 @@ make attainment-dry                          # NO key: deterministic tool rollup
 and get real numbers offline. Sample offline output on the bundled data:
 
 ```
-  NA     This month:   $491,858   (31% attain, YoY -63%) [2026-07]
-         This quarter: $3,483,770 (56% attain, YoY -36%) [2026-Q3]
-  EMEA   This month:   $333,576   (33% attain, YoY -64%) [2026-07]
-         This quarter: $2,076,272 (52% attain, YoY -41%) [2026-Q3]
+  NA     This month:   $596,585   (48% attain, YoY -42%) [2026-07]
+         This quarter: $2,774,596 (57% attain, YoY -35%) [2026-Q3]
+  EMEA   This month:   $177,194   (22% attain, YoY -76%) [2026-07]
+         This quarter: $1,517,796 (49% attain, YoY -45%) [2026-Q3]
   …
-  PORTFOLIO  month $1,075,741   quarter $7,444,892
+  PORTFOLIO  month $988,776   quarter $5,651,004
 ```
 
 **Read the current period as pace, not a final result.** It's in progress and

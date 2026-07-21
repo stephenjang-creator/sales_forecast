@@ -82,3 +82,14 @@ REGION_STAGE_NORMAL_DAYS = {
 # Regions where an early deep discount is normal practice -> do not flag
 # premature_deep_discount there.
 REGION_DISCOUNT_TOLERANT = ("APAC",)
+
+# --------------------------------------------------------------------------- #
+# Deal signals (non-anomaly classification): fast movers vs complex deals.
+# These read champion seniority and decision-process complexity to surface
+# OPPORTUNITY and duration signals alongside the risk anomalies.
+# --------------------------------------------------------------------------- #
+# Champion seniority ladder, low -> high. "Director or above" is empowered.
+CHAMPION_LEVELS = ("IC", "Manager", "Director", "VP", "C-Suite")
+CHAMPION_SENIOR_MIN = "Director"  # this rank or higher => senior/empowered
+SIMPLE_APPROVAL_MAX_LAYERS = 1  # <= this AND no C-suite => simple process
+COMPLEX_APPROVAL_MIN_LAYERS = 3  # >= this OR C-suite => complex/long process
