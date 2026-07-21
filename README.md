@@ -5,34 +5,46 @@
 ![React + Vite](https://img.shields.io/badge/react-vite-149eca)
 ![Code style: black](https://img.shields.io/badge/code%20style-black-000000)
 
-An executive-facing **forecast-risk dashboard** for a B2B SaaS pipeline. It reads
-a pipeline export, applies **deterministic rules grounded in MEDDPICC** and
-deal-hygiene, and surfaces *which committed / best-case deals are at risk, and
-why* — money at risk (ARR) up top, a region-grouped deal list with risk bands, a
-click-to-open detail drawer, and an "Ask anything" bar that routes questions to
-one of four agents. The **human-in-the-loop** split is the whole point: the
-deterministic rules own every flag and risk score; the model only explains and
-routes. Every number is auditable — a sales manager can read any flag and verify
-it against the CRM record. All data is synthetic.
+An executive-facing **forecast dashboard** for a B2B SaaS pipeline. It reads a
+pipeline export, applies **deterministic rules grounded in MEDDPICC** and
+deal-hygiene, and does the two things a forecast call needs:
+
+1. **Flags risk** — *which committed / best-case deals are at risk, and why* —
+   with money at risk (ARR) up top, a sortable region-grouped deal list with risk
+   bands, a click-to-open detail drawer, and an "Ask anything" bar that routes
+   questions to one of four agents.
+2. **Projects the number** — pick a timeframe (**this month / quarter / year**)
+   and the whole board rescopes to it: **booked-so-far + open pipeline → a
+   risk-adjusted projection**, booked Closed-Won deals shown in-line, and a
+   **YoY / QoQ / MoM** bookings-trend view.
+
+The **human-in-the-loop** split is the whole point: the deterministic rules own
+every flag and risk score; the model only explains and routes. Every number is
+auditable — a sales manager can read any flag and verify it against the CRM
+record. All data is synthetic.
 
 **Stack:** React + Vite · FastAPI · Python · pandas · Model Context Protocol
 (MCP) · Anthropic SDK · Docker · pytest / ruff / black.
 
 **What it demonstrates:** a deterministic, fully-tested rule engine with a real
 evaluation harness (precision / recall / F1 vs. labeled ground truth); a FastAPI
-service + React SPA deployable as one container; an MCP tool server and a
-multi-agent layer (per-region bookings forecasting, a deal/region "sales guru",
-and the dashboard's agent bar); and a disciplined design where the rules decide
-and the LLM only explains — so every flag is auditable.
+service + React SPA deployable as one container; **period-over-period bookings
+math** (YoY / QoQ / MoM / YTD) and a **risk-adjusted forecast projection** by
+timeframe; an MCP tool server and a multi-agent layer (per-region bookings
+forecasting, a deal/region "sales guru", and the dashboard's agent bar); and a
+disciplined design where the rules decide and the LLM only explains — so every
+flag is auditable.
 
-![Intelligent Forecast — executive dashboard: money at risk, agent bar, and the region-grouped flagged-deal list](docs/dashboard.png)
+![Intelligent Forecast — executive dashboard: the period projection (booked + open pipeline → risk-adjusted forecast), agent bar, and the sortable region-grouped deal list](docs/dashboard.png)
 
-*The web dashboard (`make api` + `make web-build`, or `docker run`): money at
-risk up top, an agent bar that routes to four RevOps agents, a Fast Mover upside
-alert, and the region-grouped flagged-deal list — each row opening a detail
-drawer with the flagging reason and recommended step. Deploy it anywhere with
-Docker (see [`DEPLOY.md`](DEPLOY.md)); set `ANTHROPIC_API_KEY` for LLM-backed
-agent answers, or run it fully offline.*
+*The web dashboard (`make api` + `make web-build`, or `docker run`): a
+**timeframe control** (this month / quarter / year) rescopes the whole board to a
+**period projection** — booked + open pipeline → a risk-adjusted forecast — over
+an agent bar that routes to four RevOps agents, a Fast Mover upside alert, and the
+sortable, foldable region-grouped deal list. Each row opens a detail drawer with
+the flagging reason and recommended step; booked Closed-Won deals show in green.
+Deploy it anywhere with Docker (see [`DEPLOY.md`](DEPLOY.md)); set
+`ANTHROPIC_API_KEY` for LLM-backed agent answers, or run it fully offline.*
 
 ## Who it's for — value by role
 
@@ -42,13 +54,15 @@ a 600-deal pipeline scored by deterministic rules, not a black-box model.
 
 ### 💵 CFO — "Can I trust the number I'm about to commit to the board?"
 
-- **Sees:** how much of the Commit + Best-Case forecast is actually shaky (the
-  *money-at-risk* KPI — e.g. `$1.2M at risk across 25 deals`), and a **Model
-  health** tab showing the detector's own precision / recall / F1 against
-  labeled ground truth.
+- **Sees:** a **period projection** for the month / quarter / year — booked +
+  open pipeline → a risk-adjusted number (e.g. `$229k booked + $12.4M pipeline →
+  $4.85M projected this quarter`) — how much of it is shaky (the *money-at-risk*
+  KPI), a **YoY / QoQ / MoM** bookings trend, and a **Model health** tab showing
+  the detector's own precision / recall / F1 against labeled ground truth.
 - **Value:** a **defensible, auditable forecast**. Every flag is a rule a human
-  can verify against the CRM — so guidance, cash planning, and quota-setting rest
-  on evidence, not optimism. The tool even reports where it's *less* certain.
+  can verify against the CRM, and the projection is booked actuals + a transparent
+  risk haircut — so guidance, cash planning, and quota-setting rest on evidence,
+  not optimism. The tool even reports where it's *less* certain.
 
 ### 📈 CRO — "Where do I point the team to hit the number?"
 
@@ -157,11 +171,28 @@ the agents, and the dashboard's agent bar) touch the Anthropic API; set
 
 The primary product is a **React + Vite** single-page dashboard served by a
 **FastAPI** backend (`api/`) that reuses the detector — the two deploy as **one
-container**. The API is read-only:
+container**. What it does:
 
-- `GET /api/forecast` — flagged deals (with owner / manager / MRR / ARR, and each
-  firing rule's reason + recommended step), KPI tiles, the AI summary line, the
-  model-health scorecard, and the Fast Mover banner.
+- **Period projection** — a header timeframe control (this month / quarter /
+  year) rescopes the whole board by close date: **booked-so-far + open pipeline →
+  a risk-adjusted projection** (stage win-rates, a haircut on flagged deals, an
+  uplift on fast movers), plus open-pipeline and at-risk totals for the period.
+- **Bookings trend** — a Bookings tab with **YoY / QoQ / MoM / YTD** deltas and a
+  month/quarter/year bar chart, computed from the Closed-Won booking history.
+- **Flagged-deal list** — sortable on every column, foldable by region, filterable
+  by risk / region / segment. Each row opens a **detail drawer** (flagging reason
+  + recommended step). **Booked Closed-Won** deals show in green (no action) and
+  can be toggled off.
+- **Ask anything** — the agent bar routes a question to one of four agents and
+  answers from the real data.
+
+The API is read-only:
+
+- `GET /api/forecast` — flagged deals (owner / manager / MRR / ARR, each firing
+  rule's reason + recommended step, projected close date), booked Closed-Won
+  deals, per-month pipeline buckets (for the projection), the YoY/QoQ/MoM bookings
+  summary, KPI tiles, the AI summary line, the model-health scorecard, and the
+  Fast Mover banner.
 - `POST /api/ask` — routes a natural-language question to one of four agents
   (Risk Triage, Forecast Explainer, Pipeline Analyst, Deal Rescue Planner) and
   answers from the real data; uses the LLM when `ANTHROPIC_API_KEY` is set,
@@ -180,10 +211,16 @@ make docker                       # docker build -t intelligent-forecast .
 docker run -p 8000:8000 -e ANTHROPIC_API_KEY=sk-... intelligent-forecast
 ```
 
+![Bookings tab — YoY / QoQ / MoM / YTD deltas and a quarterly bookings-trend chart with the in-progress period dashed](docs/bookings.png)
+
+*The Bookings tab: period-over-period deltas (booked YTD +25% YoY, last complete
+quarter −4% QoQ, last complete month +14% MoM) over a month/quarter/year
+bookings-trend chart — all computed from the Closed-Won booking history.*
+
 Full deployment guide (env vars, managed hosts): [`DEPLOY.md`](DEPLOY.md). The
 dashboard works fully **without** a key — the agent bar just falls back to
 deterministic answers. A lightweight **Streamlit** view (`make app`) is kept as
-a secondary/portfolio UI (see [The UI](#the-ui)).
+a secondary/portfolio UI (see [The Streamlit view](#the-streamlit-view-secondary)).
 
 ## How the rules map to MEDDPICC
 
@@ -210,7 +247,7 @@ sales_forecast/
 ├── generate_forecast_data.py   # synthetic labeled pipeline (region-aware behavior)
 ├── generate_history.py         # synthetic historical bookings + forward targets
 ├── data/
-│   ├── pipeline.csv            # labeled deals: MRR/ARR, firmographics, MEDDPICC, region, owner + sales manager, next_meeting_date
+│   ├── pipeline.csv            # labeled deals: MRR/ARR, firmographics, MEDDPICC, region, owner + sales manager, next_meeting_date, booked/projected close dates
 │   ├── history.csv             # 36 months of actual bookings + quota per region
 │   └── targets.csv             # current + forward quotas per region
 ├── config.py                   # every tunable threshold (+ win-rates/haircut)
@@ -233,7 +270,9 @@ sales_forecast/
 │   └── server.py               # FastAPI app: JSON API + serves the built SPA
 ├── web/                        # React + Vite dashboard (the Intelligent Forecast UI)
 │   ├── index.html · vite.config.js · package.json
-│   └── src/                    # App.jsx, tokens.js, api.js, components/*
+│   └── src/                    # App.jsx, tokens.js, api.js, time.js (timeframe
+│                               #   projection math), components/* (Header, Summary,
+│                               #   DealsTab, BookingsTab, Drawer, HoverPeek, …)
 ├── tests/
 │   ├── test_rules.py           # a firing row + a clean row per rule
 │   ├── test_signals.py         # fast-mover / complex-deal signal classifiers
