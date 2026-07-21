@@ -1,0 +1,16 @@
+# Deterministic core
+pandas>=2.0
+
+# UI
+streamlit>=1.30
+
+# MCP server (agent access to the detector)
+mcp>=1.0
+
+# Optional LLM briefs (narrative.py degrades gracefully if unused)
+anthropic>=0.40
+
+# Dev
+pytest>=8.0
+ruff>=0.5
+black>=24.0

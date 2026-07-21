@@ -1,0 +1,7 @@
+line-length = 100
+
+# The data generator is provided and must not be rewritten; don't lint it.
+extend-exclude = ["generate_forecast_data.py"]
+
+[lint]
+select = ["E", "F", "W", "I", "B", "SIM"]

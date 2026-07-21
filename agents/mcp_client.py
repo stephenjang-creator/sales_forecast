@@ -1,0 +1,108 @@
+"""Thin async client for talking to ``mcp_server.py`` over stdio.
+
+Launches the server as a subprocess, exposes its tools, and parses their JSON
+returns back into Python objects. Also converts the MCP tool list into the
+schema shape the Anthropic Messages API expects, so an agent loop can offer the
+same tools to the model.
+
+Nothing here is detector logic -- it's transport plumbing shared by the
+attainment agents and the ``--dry-run`` path.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import json
+import os
+import sys
+from pathlib import Path
+from typing import Any, AsyncIterator
+
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+
+SERVER_PATH = Path(__file__).resolve().parent.parent / "mcp_server.py"
+
+
+@contextlib.asynccontextmanager
+async def open_session(csv_path: str | None = None) -> AsyncIterator[ClientSession]:
+    """Start the MCP server over stdio and yield an initialized session.
+
+    ``csv_path`` overrides ``FORECAST_CSV`` for the spawned server so an agent
+    can point at a specific export.
+    """
+    env = dict(os.environ)
+    if csv_path:
+        env["FORECAST_CSV"] = csv_path
+    params = StdioServerParameters(command=sys.executable, args=[str(SERVER_PATH)], env=env)
+    # Route the server's stderr (request logging) to devnull so agent output
+    # stays clean; tool errors still come back in-band as {"error": ...}.
+    with open(os.devnull, "w") as errlog:
+        async with stdio_client(params, errlog=errlog) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                yield session
+
+
+def _parse_tool_result(result: Any) -> Any:
+    """Pull the JSON payload out of an MCP CallToolResult."""
+    structured = getattr(result, "structuredContent", None)
+    if isinstance(structured, dict):
+        # FastMCP wraps non-dict returns as {"result": ...}; unwrap that.
+        return structured.get("result", structured)
+    for block in getattr(result, "content", []) or []:
+        text = getattr(block, "text", None)
+        if text is not None:
+            try:
+                return json.loads(text)
+            except json.JSONDecodeError:
+                return text
+    return None
+
+
+async def call_tool(session: ClientSession, name: str, arguments: dict | None = None) -> Any:
+    """Call an MCP tool and return its parsed JSON payload."""
+    result = await session.call_tool(name, arguments or {})
+    return _parse_tool_result(result)
+
+
+async def anthropic_tool_schema(session: ClientSession) -> list[dict]:
+    """The server's tools in Anthropic Messages `tools=` format."""
+    listed = await session.list_tools()
+    schema = []
+    for tool in listed.tools:
+        schema.append(
+            {
+                "name": tool.name,
+                "description": tool.description or "",
+                "input_schema": tool.inputSchema or {"type": "object", "properties": {}},
+            }
+        )
+    return schema
+
+
+async def gather_region_context(session: ClientSession, region: str) -> dict:
+    """Collect everything an attainment agent needs for one region, via tools."""
+    rollup = await call_tool(session, "assess_region", {"region": region})
+    deals = await call_tool(session, "list_deals", {"region": region, "limit": 1000})
+    flagged = await call_tool(
+        session,
+        "list_deals",
+        {"region": region, "flagged_only": True, "limit": 1000},
+    )
+    month_rollup = await call_tool(session, "bookings_rollup", {"grain": "month", "region": region})
+    quarter_rollup = await call_tool(
+        session, "bookings_rollup", {"grain": "quarter", "region": region}
+    )
+    quarter_history = await call_tool(
+        session, "period_comparison", {"grain": "quarter", "region": region}
+    )
+    return {
+        "region": region,
+        "rollup": rollup,
+        "deals": deals if isinstance(deals, list) else [],
+        "flagged_deals": flagged if isinstance(flagged, list) else [],
+        "month_rollup": month_rollup,
+        "quarter_rollup": quarter_rollup,
+        "quarter_history": quarter_history,
+    }
