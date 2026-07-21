@@ -2,6 +2,7 @@ import { ACCENT, C, MONO, SHADOW, tierColors, tierOf } from "../tokens.js";
 
 export default function Drawer({ deal, onClose, onAsk }) {
   const open = !!deal;
+  const isClosed = !!deal?.closed; // Closed Won: booked, no risk, no rescue
   const tc = deal ? tierColors(deal.risk) : {};
   const facts = deal
     ? [
@@ -55,8 +56,8 @@ export default function Drawer({ deal, onClose, onAsk }) {
                     height: 32,
                     padding: "0 9px",
                     borderRadius: 8,
-                    background: tc.chipBg,
-                    color: tc.chipFg,
+                    background: isClosed ? "oklch(0.91 0.09 155)" : tc.chipBg,
+                    color: isClosed ? C.closedText : tc.chipFg,
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
@@ -65,14 +66,14 @@ export default function Drawer({ deal, onClose, onAsk }) {
                     fontFamily: MONO,
                   }}
                 >
-                  {deal.risk}
+                  {isClosed ? "✓" : deal.risk}
                 </div>
                 <div>
                   <div style={{ fontSize: 17, fontWeight: 700, letterSpacing: "-0.01em", color: "oklch(0.2 0.014 262)" }}>
                     {deal.account}
                   </div>
                   <div style={{ fontSize: 11.5, color: "oklch(0.58 0.01 260)", fontFamily: MONO, marginTop: 2 }}>
-                    {deal.id} · {deal.region} · {tierOf(deal.risk)} risk
+                    {deal.id} · {deal.region} · {isClosed ? "Closed Won" : `${tierOf(deal.risk)} risk`}
                   </div>
                 </div>
               </div>
@@ -94,9 +95,30 @@ export default function Drawer({ deal, onClose, onAsk }) {
               </div>
             </div>
 
-            <SectionLabel>Flagged issues &amp; recommended steps</SectionLabel>
-            <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 24 }}>
-              {deal.rules.map((r) => (
+            {isClosed ? (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  marginBottom: 24,
+                  padding: "13px 15px",
+                  borderRadius: 10,
+                  background: C.closedBg,
+                  border: `1px solid ${C.closedBorder}`,
+                }}
+              >
+                <span style={{ fontSize: 16, color: C.closedText }}>✓</span>
+                <div style={{ fontSize: 13, lineHeight: 1.45, color: C.closedText, fontWeight: 500 }}>
+                  Booked (Closed Won) — this deal is already won and counts toward the
+                  period forecast. No risk, no action needed.
+                </div>
+              </div>
+            ) : (
+              <>
+                <SectionLabel>Flagged issues &amp; recommended steps</SectionLabel>
+                <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 24 }}>
+                  {deal.rules.map((r) => (
                 <div key={r.id} style={{ border: `1px solid ${C.border}`, borderRadius: 10, overflow: "hidden" }}>
                   <div style={{ padding: "11px 13px", background: C.headerBg }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
@@ -114,8 +136,10 @@ export default function Drawer({ deal, onClose, onAsk }) {
                     <div style={{ fontSize: 12.5, lineHeight: 1.45, color: "oklch(0.32 0.014 262)" }}>{r.action}</div>
                   </div>
                 </div>
-              ))}
-            </div>
+                  ))}
+                </div>
+              </>
+            )}
 
             <SectionLabel>Deal facts</SectionLabel>
             <div
@@ -139,15 +163,17 @@ export default function Drawer({ deal, onClose, onAsk }) {
             </div>
 
             <div style={{ display: "flex", gap: 8 }}>
-              <button
-                onClick={() => onAsk(deal)}
-                style={{ flex: 1, height: 38, border: "none", borderRadius: 9, background: ACCENT, color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}
-              >
-                Ask Deal Rescue Planner
-              </button>
+              {!isClosed && (
+                <button
+                  onClick={() => onAsk(deal)}
+                  style={{ flex: 1, height: 38, border: "none", borderRadius: 9, background: ACCENT, color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}
+                >
+                  Ask Deal Rescue Planner
+                </button>
+              )}
               <button
                 onClick={onClose}
-                style={{ height: 38, padding: "0 16px", border: `1px solid ${C.border}`, borderRadius: 9, background: "#fff", color: "oklch(0.4 0.012 260)", fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "inherit" }}
+                style={{ flex: isClosed ? 1 : "none", height: 38, padding: "0 16px", border: `1px solid ${C.border}`, borderRadius: 9, background: "#fff", color: "oklch(0.4 0.012 260)", fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "inherit" }}
               >
                 Close
               </button>
