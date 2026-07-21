@@ -109,6 +109,18 @@ SEG_APPROVAL_LAYERS = {  # (layer counts, weights)
     "Enterprise": ([1, 2, 3, 4], [0.10, 0.32, 0.36, 0.22]),
 }
 SEG_CSUITE_PROB = {"SMB": 0.05, "Mid-Market": 0.15, "Enterprise": 0.42}
+# Name pools for the sales org (opportunity owners + their managers). Generous
+# enough (30 x 30 = 900 combos) that every region gets a disjoint, globally
+# unique set with room to spare. Independent of faker so it's fully reproducible.
+ORG_FIRST = ["Alex", "Jordan", "Taylor", "Morgan", "Casey", "Riley", "Sam", "Jamie",
+             "Avery", "Quinn", "Drew", "Cameron", "Reese", "Skyler", "Blake", "Harper",
+             "Emerson", "Rowan", "Sage", "Devon", "Lane", "Marley", "Kendall", "Parker",
+             "Dana", "Elliot", "Frankie", "Gray", "Hayden", "Noel"]
+ORG_LAST = ["Nguyen", "Patel", "Garcia", "Kim", "Rossi", "Haddad", "Okafor", "Silva",
+            "Novak", "Ivanov", "Chen", "Muller", "Sato", "Adeyemi", "Larsen", "Costa",
+            "Fischer", "Duarte", "Bauer", "Moreau", "Vidal", "Schmidt", "Bianchi",
+            "Kowalski", "Nakamura", "Petrov", "Reyes", "Tanaka", "Dubois", "Meyer"]
+
 STAGES = ["Discovery", "Qualification", "Proposal", "Negotiation",
           "Closed Won", "Closed Lost"]
 OPEN_STAGES = STAGES[:4]
@@ -404,6 +416,38 @@ def _derive(rec, today):
     return rec
 
 
+def _build_region_org(records, seed):
+    """A region-disjoint sales org: opportunity owners + their sales managers.
+
+    Returns ``{region: (owners, owner_to_manager)}``. Names are drawn from a
+    dedicated RNG (independent of the main generation sequence) and de-duplicated
+    globally, so NO owner or manager name is ever repeated across regions. Book
+    sizes scale with each region's deal count (~20 deals/owner, ~4 owners/manager).
+    """
+    rng = random.Random(seed + 4242)
+    used = set()
+
+    def _name():
+        while True:  # redraw until globally unique
+            name = f"{rng.choice(ORG_FIRST)} {rng.choice(ORG_LAST)}"
+            if name not in used:
+                used.add(name)
+                return name
+
+    org = {}
+    for region in REGIONS:
+        count = sum(1 for r in records if r["region"] == region)
+        if count == 0:
+            continue
+        n_owners = max(4, round(count / 20))
+        n_managers = max(1, round(n_owners / 4))
+        managers = [_name() for _ in range(n_managers)]
+        owners = [_name() for _ in range(n_owners)]
+        owner_to_manager = {o: managers[i % n_managers] for i, o in enumerate(owners)}
+        org[region] = (owners, owner_to_manager)
+    return org
+
+
 def _next_meeting(rec, today, rng):
     """Upcoming meeting date for an open deal (or "" if none / closed).
 
@@ -435,7 +479,7 @@ def build(n=600, seed=42, anomaly_rate=0.18):
     records = []
     for i in range(n):
         rec = _base_record(i, today)
-        rec["rep"] = random.choice(reps)
+        rec["rep"] = random.choice(reps)  # placeholder; region-specific owner set below
         records.append(rec)
 
     # Inject anomalies into a random subset
@@ -467,6 +511,20 @@ def build(n=600, seed=42, anomaly_rate=0.18):
         rec["next_meeting_date"] = nm
         rec["days_to_next_meeting"] = (nm - today).days if nm != "" else ""
 
+    # Assign a region-disjoint opportunity owner + sales manager to each deal.
+    # Owners are distributed round-robin within their region (balanced, no RNG),
+    # and the org names come from a dedicated RNG -- so this overwrites the
+    # placeholder `rep` and adds `sales_manager` without touching any other
+    # column, keeping the dataset reproducible.
+    org = _build_region_org(records, seed)
+    seen_per_region = {region: 0 for region in org}
+    for rec in records:
+        owners, owner_to_manager = org[rec["region"]]
+        owner = owners[seen_per_region[rec["region"]] % len(owners)]
+        seen_per_region[rec["region"]] += 1
+        rec["rep"] = owner
+        rec["sales_manager"] = owner_to_manager[owner]
+
     df = pd.DataFrame(records)
     df["anomaly_types"] = df["anomaly_types"].apply(lambda x: "|".join(x))
 
@@ -475,7 +533,7 @@ def build(n=600, seed=42, anomaly_rate=0.18):
         "industry", "employees", "account_revenue",
         "champion_seniority", "approval_layers", "csuite_approval",
         "mrr", "arr", "stage", "forecast_category",
-        "rep", "created_date", "stage_entry_date", "orig_close_date",
+        "rep", "sales_manager", "created_date", "stage_entry_date", "orig_close_date",
         "close_date", "next_meeting_date", "close_date_pushes", "discount_pct",
         "days_open", "days_in_stage", "days_to_close", "days_to_next_meeting", "slip_days",
         *[f"m_{k}" for k in MEDDPICC],

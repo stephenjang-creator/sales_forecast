@@ -106,9 +106,14 @@ _ACTION_ITEM = {
             "items": {"type": "string"},
             "description": (
                 "Every account this action covers (the tool already bounded the "
-                "set), each as company + MRR (+ stage), e.g. 'Acme Group "
-                "($8,200/mo) — Negotiation'. Never a deal_id."
+                "set), each as company + MRR (+ stage + owner), e.g. 'Acme Group "
+                "($8,200/mo) — Negotiation — owner Alex Fischer'. Never a deal_id."
             ),
+        },
+        "notify_managers": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Sales managers the VP should notify to run this play.",
         },
     },
     "required": ["priority", "action", "deals"],
@@ -118,6 +123,7 @@ _CALL_ITEM = {
     "type": "object",
     "properties": {
         "deal": {"type": "string", "description": "Company + MRR, e.g. 'Acme Group ($8,200/mo)'."},
+        "owner": {"type": "string", "description": "The opportunity owner (rep) whose call it is."},
         "next_meeting_date": {
             "type": "string",
             "description": "The deal's next_meeting_date (when to join), or '' if none is booked.",
@@ -160,9 +166,11 @@ _DEAL_SYSTEM = (
     "recommendation in the MCP tools: assess_deal gives the risk picture and "
     "MEDDPICC scores, recommend_plays gives the deterministic plays mapped from "
     "the deal's flags. Personalize those plays to THIS deal -- sharpen the next "
-    "steps, name the owner, and write a talk track for the next call. Refer to the "
-    "deal by its COMPANY and MRR (assess_deal's label / account + mrr), not the "
-    "deal_id. You never change a flag and never invent a deal, contact, or number "
+    "steps, name the play owner, and write a talk track for the next call. Refer "
+    "to the deal by its COMPANY and MRR (assess_deal's label / account + mrr), not "
+    "the deal_id, and note the opportunity owner (assess_deal's owner) and their "
+    "sales_manager so the right people run the play. You never change a flag and "
+    "never invent a deal, contact, or number "
     "the tools did not return; you respond to the flags the detector set. When "
     "finished, call submit_coaching exactly once."
 )
@@ -183,9 +191,11 @@ _REGION_SYSTEM = (
     "Always name deals by "
     "COMPANY and MRR (the tool's deals[].label, e.g. 'Acme Group ($8,200/mo)') -- "
     "never a deal_id -- and for each action list every account the tool surfaced "
-    "(it already capped the set to the top-priority deals; don't drop any). Use "
-    "only the deals the tool returned; never invent a deal or number. When "
-    "finished, call submit_region_actions once."
+    "(it already capped the set to the top-priority deals; don't drop any), naming "
+    "the opportunity owner per deal and the sales managers to notify (deals[].owner "
+    "/ deals[].sales_manager) so the VP knows who to delegate to. Use only the "
+    "deals the tool returned; never invent a deal or number. When finished, call "
+    "submit_region_actions once."
 )
 
 _CHAT_SYSTEM = (
@@ -200,6 +210,8 @@ _CHAT_SYSTEM = (
     "contact, or number the tools did not return. Be concise and specific. Always "
     "refer to a deal by its COMPANY and MRR (the tools' label / account + mrr, "
     "e.g. 'Acme Group ($8,200/mo)'), never a deal_id -- that's how reps think. "
+    "When it's relevant, name the opportunity owner and their sales_manager (both "
+    "on every deal the tools return). "
     "When you list priorities keep them in the tool's ranked order, and show a few "
     "named accounts rather than a long dump. It's fine to call several tools before "
     "answering, and to ask a clarifying question (e.g. which region) when needed."
@@ -218,7 +230,14 @@ def _deal_headline(assessment: dict, deal_id: str) -> dict:
         label = (
             f"{account} (${mrr:,.0f}/mo)" if account and mrr is not None else (account or deal_id)
         )
-    return {"deal_id": deal_id, "account": account, "mrr": mrr, "label": label}
+    return {
+        "deal_id": deal_id,
+        "account": account,
+        "mrr": mrr,
+        "label": label,
+        "owner": assessment.get("owner"),
+        "sales_manager": assessment.get("sales_manager"),
+    }
 
 
 def _deterministic_coaching(ctx: dict) -> dict:
@@ -243,10 +262,14 @@ def _deterministic_coaching(ctx: dict) -> dict:
 
 
 def _deal_line(deal: dict) -> str:
-    """'Acme Group ($8,200/mo) — Negotiation' from a tool deal dict."""
+    """'Acme Group ($8,200/mo) — Negotiation — owner Alex Fischer' from a deal."""
     label = deal.get("label") or deal.get("account") or deal.get("deal_id", "")
-    stage = deal.get("stage")
-    return f"{label} — {stage}" if stage else str(label)
+    parts = [str(label)]
+    if deal.get("stage"):
+        parts.append(str(deal["stage"]))
+    if deal.get("owner"):
+        parts.append(f"owner {deal['owner']}")
+    return " — ".join(parts)
 
 
 def _deterministic_actions(plan: dict) -> dict:
@@ -259,6 +282,7 @@ def _deterministic_actions(plan: dict) -> dict:
     actions = []
     for a in tool_actions:
         deals = a.get("deals", [])
+        managers = sorted({d["sales_manager"] for d in deals if d.get("sales_manager")})
         actions.append(
             {
                 "priority": a["priority"],
@@ -269,6 +293,7 @@ def _deterministic_actions(plan: dict) -> dict:
                 "deal_count": a.get("deal_count", len(deals)),
                 "mrr_at_stake": a.get("mrr_at_stake"),
                 "deals": [_deal_line(d) for d in deals],
+                "notify_managers": managers,  # who the VP messages to run this play
             }
         )
     if actions:
@@ -280,6 +305,8 @@ def _deterministic_actions(plan: dict) -> dict:
     calls = [
         {
             "deal": c.get("label") or c.get("account") or c["deal_id"],
+            "owner": c.get("owner"),
+            "sales_manager": c.get("sales_manager"),
             "next_meeting_date": c.get("next_meeting_date"),
             "why": f"{c['stakeholder']} — {c['move']}",
         }
@@ -543,6 +570,9 @@ def _print_coaching(c: dict) -> None:
         return
     print("=" * 72)
     print(f"  SALES GURU — {label}")
+    if c.get("owner"):
+        mgr = f", manager {c['sales_manager']}" if c.get("sales_manager") else ""
+        print(f"  Owner: {c['owner']}{mgr}")
     print("=" * 72)
     print(f"  {c.get('summary', '')}")
     for i, play in enumerate(c.get("plays", []), 1):
@@ -574,6 +604,8 @@ def _print_priorities(p: dict) -> None:
             print(f"       ↳ {a['why']}")
         for deal in a.get("deals", []):
             print(f"       • {deal}")
+        if a.get("notify_managers"):
+            print(f"       → delegate: notify {', '.join(a['notify_managers'])}")
     calls = p.get("calls_to_join", [])
     if calls:
         print("    ☎ Join these calls yourself (VP time is scarce):")
@@ -581,7 +613,8 @@ def _print_priorities(p: dict) -> None:
             name = c.get("deal") or c.get("deal_id", "")
             when = c.get("next_meeting_date")
             when_bit = f" — next meeting {when}" if when else " — no meeting booked, get one set"
-            print(f"       • {name}{when_bit}: {c['why']}")
+            owner_bit = f" (owner {c['owner']})" if c.get("owner") else ""
+            print(f"       • {name}{owner_bit}{when_bit}: {c['why']}")
 
 
 def _print_region_report(result: dict) -> None:

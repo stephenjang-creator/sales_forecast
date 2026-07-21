@@ -83,12 +83,16 @@ def test_deterministic_actions_from_top_actions() -> None:
                         "label": "Acme ($8,000/mo)",
                         "mrr": 8000,
                         "stage": "Negotiation",
+                        "owner": "Alex Fischer",
+                        "sales_manager": "Harper Bianchi",
                     },
                     {
                         "deal_id": "D-4",
                         "label": "Globex ($4,500/mo)",
                         "mrr": 4500,
                         "stage": "Proposal",
+                        "owner": "Sam Patel",
+                        "sales_manager": "Dana Nguyen",
                     },
                 ],
             },
@@ -97,6 +101,8 @@ def test_deterministic_actions_from_top_actions() -> None:
             {
                 "deal_id": "D-9",
                 "label": "Acme ($8,000/mo)",
+                "owner": "Alex Fischer",
+                "sales_manager": "Harper Bianchi",
                 "next_meeting_date": "2026-07-24",
                 "stakeholder": "VP champion engaged",
                 "move": "Pull forward",
@@ -108,13 +114,20 @@ def test_deterministic_actions_from_top_actions() -> None:
     assert "Pull it forward and close" in out["headline"]  # leads with #1
     a = out["actions"][0]
     assert a["action"] == "Pull it forward and close"
-    # Every deal is listed by company + MRR (+ stage), not deal_id -- no tail.
-    assert a["deals"] == ["Acme ($8,000/mo) — Negotiation", "Globex ($4,500/mo) — Proposal"]
+    # Every deal is listed by company + MRR (+ stage + owner), not deal_id.
+    assert a["deals"] == [
+        "Acme ($8,000/mo) — Negotiation — owner Alex Fischer",
+        "Globex ($4,500/mo) — Proposal — owner Sam Patel",
+    ]
     assert "more" not in a
-    # VP-personal calls carry through, named by company + MRR + when to join.
+    # The managers to notify (delegate) are collected from the covered deals.
+    assert a["notify_managers"] == ["Dana Nguyen", "Harper Bianchi"]
+    # VP-personal calls carry through, named by company + MRR + owner + when.
     assert out["calls_to_join"] == [
         {
             "deal": "Acme ($8,000/mo)",
+            "owner": "Alex Fischer",
+            "sales_manager": "Harper Bianchi",
             "next_meeting_date": "2026-07-24",
             "why": "VP champion engaged — Pull forward",
         }

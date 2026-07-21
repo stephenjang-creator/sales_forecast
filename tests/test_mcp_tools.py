@@ -39,6 +39,8 @@ def test_list_deals_shape_and_cap() -> None:
         "region",
         "segment",
         "industry",
+        "owner",
+        "sales_manager",
         "mrr",
         "stage",
         "forecast_category",
@@ -142,10 +144,30 @@ def test_region_top_actions_grouped_and_ranked() -> None:
         assert abs(a["arr_at_stake"] - round(sum(d["arr"] for d in a["deals"]), 0)) < 1.0
         assert {"title", "first_step", "owner", "mrr_at_stake"} <= set(a.keys())
         for deal in a["deals"]:
-            # Rep-friendly: every deal carries a company + MRR label.
+            # Rep-friendly: every deal carries a company + MRR label + org.
             assert {"champion_seniority", "good_champion", "label", "mrr"} <= set(deal.keys())
+            assert {"owner", "sales_manager"} <= set(deal.keys())
             assert deal["account"] in deal["label"]
     json.dumps(plan)
+
+
+def test_owner_and_manager_surfaced_and_region_disjoint() -> None:
+    # Every deal carries an opportunity owner + sales manager, and the manager
+    # filter works.
+    d = srv.list_deals(limit=1)[0]
+    assert d["owner"] and d["sales_manager"]
+    full = srv.assess_deal(d["deal_id"])
+    assert full["owner"] == d["owner"] and full["sales_manager"] == d["sales_manager"]
+    under_mgr = srv.list_deals(sales_manager=d["sales_manager"], limit=500)
+    assert under_mgr and all(x["sales_manager"] == d["sales_manager"] for x in under_mgr)
+    # Owners and managers never repeat across regions.
+    df = srv._df()
+    for col in ("rep", "sales_manager"):
+        by_region = df.groupby("region")[col].apply(set)
+        regions = list(by_region.index)
+        for i in range(len(regions)):
+            for j in range(i + 1, len(regions)):
+                assert not (by_region[regions[i]] & by_region[regions[j]]), f"{col} repeats"
 
 
 def test_region_top_actions_deal_budget_bounds_and_lists_all() -> None:

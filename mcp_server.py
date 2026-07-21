@@ -178,6 +178,8 @@ def _compact_deal(row: pd.Series) -> dict:
         "region": _region_of(row),
         "segment": str(row["segment"]),
         "industry": _opt_str(row, "industry"),
+        "owner": _opt_str(row, "rep"),
+        "sales_manager": _opt_str(row, "sales_manager"),
         "mrr": _opt_num(row, "mrr", float),
         "stage": str(row["stage"]),
         "forecast_category": str(row["forecast_category"]),
@@ -245,6 +247,7 @@ def list_deals(
     stage: str | None = None,
     industry: str | None = None,
     rep: str | None = None,
+    sales_manager: str | None = None,
     flagged_only: bool = False,
     signal: str | None = None,
     limit: int = 25,
@@ -253,13 +256,14 @@ def list_deals(
     """List pipeline deals, optionally filtered, highest risk first.
 
     Use to browse or narrow the pipeline before drilling in. Any filter left as
-    None is ignored (segment, region, stage, industry, rep). Set
-    flagged_only=True to see only at-risk (anomaly) deals, or signal="fast_mover"
-    / "complex_deal" to filter by deal signal. Set region_aware=True to score with
-    the per-region threshold overlay (US flags stalls sooner, EMEA proposals get
-    slack, APAC tolerates early discounts). Returns up to `limit` compact deal
-    summaries (deal_id, account, region, segment, industry, mrr, stage,
-    forecast_category, arr, risk_score, predicted_anomaly, signals, top_reason).
+    None is ignored (segment, region, stage, industry, rep=opportunity owner,
+    sales_manager). Set flagged_only=True to see only at-risk (anomaly) deals, or
+    signal="fast_mover" / "complex_deal" / "meeting_at_risk" to filter by deal
+    signal. Set region_aware=True to score with the per-region threshold overlay
+    (US flags stalls sooner, EMEA proposals get slack, APAC tolerates early
+    discounts). Returns up to `limit` compact deal summaries (deal_id, account,
+    region, segment, industry, owner, sales_manager, mrr, stage, forecast_category,
+    arr, next_meeting_date, risk_score, predicted_anomaly, signals, top_reason).
     """
     try:
         df = _df(region_aware)
@@ -282,6 +286,10 @@ def list_deals(
             mask &= df["industry"] == industry
         if rep is not None:
             mask &= df["rep"] == rep
+        if sales_manager is not None:
+            if "sales_manager" not in df.columns:
+                return {"error": "No 'sales_manager' column in this dataset; run `make data`."}
+            mask &= df["sales_manager"] == sales_manager
         if flagged_only:
             mask &= df["predicted_anomaly"]
         sub = df[mask].sort_values("risk_score", ascending=False).head(int(limit))
@@ -310,6 +318,8 @@ def assess_deal(deal_id: str, region_aware: bool = False) -> dict:
             "account": str(row["account"]),
             "region": _region_of(row),
             "segment": str(row["segment"]),
+            "owner": _opt_str(row, "rep"),
+            "sales_manager": _opt_str(row, "sales_manager"),
             **_firmographics(row),
             "decision_profile": {
                 "champion_seniority": _opt_str(row, "champion_seniority"),
@@ -659,6 +669,8 @@ def _action_deal(row: pd.Series, reason: str) -> dict:
         "stage": str(row["stage"]),
         "forecast_category": str(row["forecast_category"]),
         "arr": float(row["arr"]),
+        "owner": _opt_str(row, "rep"),
+        "sales_manager": _opt_str(row, "sales_manager"),
         "next_meeting_date": _opt_str(row, "next_meeting_date"),
         "champion_seniority": _opt_str(row, "champion_seniority"),
         "good_champion": _good_champion(row),
@@ -741,6 +753,8 @@ def region_top_actions(region: str, region_aware: bool = False, max_deals: int =
                         "mrr": _opt_num(row, "mrr", float),
                         "stage": str(row["stage"]),
                         "arr": float(row["arr"]),
+                        "owner": _opt_str(row, "rep"),
+                        "sales_manager": _opt_str(row, "sales_manager"),
                         "next_meeting_date": _opt_str(row, "next_meeting_date"),
                         "champion_seniority": _opt_str(row, "champion_seniority"),
                         "stakeholder": stakeholder,

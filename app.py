@@ -32,6 +32,8 @@ FLAGGED_COLUMNS = [
     "region",
     "segment",
     "industry",
+    "rep",
+    "sales_manager",
     "mrr",
     "arr",
     "stage",
@@ -134,6 +136,8 @@ def render_flagged(scored: pd.DataFrame, use_narrative: bool) -> None:
         hide_index=True,
         use_container_width=True,
         column_config={
+            "rep": st.column_config.TextColumn("Owner"),
+            "sales_manager": st.column_config.TextColumn("Sales manager"),
             "mrr": st.column_config.NumberColumn("MRR", format="$%d"),
             "arr": st.column_config.NumberColumn("ARR", format="$%d"),
             "next_meeting_date": st.column_config.TextColumn("Next meeting"),
@@ -163,6 +167,13 @@ def render_flagged(scored: pd.DataFrame, use_narrative: bool) -> None:
                 if pd.notna(row.get("mrr")):
                     bits.append(f"${int(row['mrr']):,}/mo MRR")
                 st.caption(" · ".join(bits))
+            if pd.notna(row.get("rep")):
+                mgr = (
+                    f" · manager {row['sales_manager']}"
+                    if pd.notna(row.get("sales_manager"))
+                    else ""
+                )
+                st.caption(f"👤 Owner: {row['rep']}{mgr}")
             nm = row.get("next_meeting_date")
             st.caption(f"📅 Next meeting: {nm}" if pd.notna(nm) else "📅 No meeting booked")
             for hit in row["hits"]:
