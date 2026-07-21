@@ -304,10 +304,11 @@ def build(n=600, seed=42, anomaly_rate=0.18):
     n_anom = int(n * anomaly_rate)
     targets = random.sample(records, n_anom)
     for rec in targets:
-        random.shuffle(INJECTORS)
+        order = list(INJECTORS)  # shuffle a copy; never mutate the shared list
+        random.shuffle(order)
         applied = 0
         want = random.choices([1, 2], weights=[0.75, 0.25])[0]
-        for inj in INJECTORS:
+        for inj in order:
             if inj(rec, today):
                 applied += 1
                 if applied >= want:
@@ -336,7 +337,7 @@ def build(n=600, seed=42, anomaly_rate=0.18):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--n", type=int, default=600)
-    ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--seed", type=int, default=31)
     ap.add_argument("--anomaly-rate", type=float, default=0.18)
     ap.add_argument("--out", default="pipeline.csv")
     args = ap.parse_args()
