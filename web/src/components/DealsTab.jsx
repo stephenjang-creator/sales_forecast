@@ -1,9 +1,44 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { ACCENT, C, MONO, tierColors, tierOf } from "../tokens.js";
 
 const GRID = "74px minmax(170px,1.5fr) 136px 118px 116px 100px 112px";
 const TIERS = ["Critical", "High", "Medium", "Low"];
 const SEGMENTS = ["Enterprise", "Mid-Market", "SMB"];
+
+// Columns, in table order. `key` maps into SORT_KEYS below; `align` right-aligns ARR.
+const COLUMNS = [
+  { key: "risk", label: "Risk", align: "left" },
+  { key: "account", label: "Account", align: "left" },
+  { key: "owner", label: "Opportunity owner", align: "left" },
+  { key: "manager", label: "Sales manager", align: "left" },
+  { key: "stage", label: "Stage", align: "left" },
+  { key: "fc", label: "Forecast", align: "left" },
+  { key: "arr", label: "ARR", align: "right" },
+];
+
+// Each column's sort accessor + natural default direction. Stage/Forecast sort by
+// the numeric rank the API attaches (funnel/confidence order), not alphabetically.
+const SORT_KEYS = {
+  risk: { get: (d) => d.risk, defaultDir: "desc" },
+  account: { get: (d) => (d.account || "").toLowerCase(), defaultDir: "asc" },
+  owner: { get: (d) => (d.owner || "").toLowerCase(), defaultDir: "asc" },
+  manager: { get: (d) => (d.manager || "").toLowerCase(), defaultDir: "asc" },
+  stage: { get: (d) => (d.stageRank ?? 99), defaultDir: "asc" },
+  fc: { get: (d) => (d.fcRank ?? 99), defaultDir: "asc" },
+  arr: { get: (d) => d.arr, defaultDir: "desc" },
+};
+
+function sortRows(rows, sort) {
+  const { get } = SORT_KEYS[sort.col];
+  const dir = sort.dir === "asc" ? 1 : -1;
+  return [...rows].sort((a, b) => {
+    const va = get(a);
+    const vb = get(b);
+    if (va < vb) return -dir;
+    if (va > vb) return dir;
+    return b.risk - a.risk || b.arr - a.arr; // stable tiebreak: riskiest/richest
+  });
+}
 
 function Pill({ label, active, onClick }) {
   return (
@@ -175,14 +210,44 @@ function Cell({ text }) {
   );
 }
 
-function HeaderRow() {
-  const cell = {
-    fontSize: 10.5,
-    fontWeight: 600,
-    letterSpacing: "0.04em",
-    textTransform: "uppercase",
-    color: C.muted,
-  };
+// A clickable, sortable column header. Shows ▲/▼ on the active column and a faint
+// ↕ on the rest so every column reads as sortable.
+function SortHeader({ col, sort, onSort }) {
+  const active = sort.col === col.key;
+  const right = col.align === "right";
+  const arrow = active ? (sort.dir === "asc" ? "▲" : "▼") : "↕";
+  return (
+    <button
+      onClick={() => onSort(col.key)}
+      title={`Sort by ${col.label}`}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 5,
+        justifyContent: right ? "flex-end" : "flex-start",
+        border: "none",
+        background: "transparent",
+        padding: 0,
+        cursor: "pointer",
+        fontFamily: "inherit",
+        fontSize: 10.5,
+        fontWeight: 600,
+        letterSpacing: "0.04em",
+        textTransform: "uppercase",
+        color: active ? ACCENT : C.muted,
+        transition: "color .12s",
+      }}
+      onMouseOver={(e) => !active && (e.currentTarget.style.color = C.text)}
+      onMouseOut={(e) => !active && (e.currentTarget.style.color = C.muted)}
+    >
+      {right && <span>{col.label}</span>}
+      <span style={{ fontSize: 9, opacity: active ? 1 : 0.4 }}>{arrow}</span>
+      {!right && <span>{col.label}</span>}
+    </button>
+  );
+}
+
+function HeaderRow({ sort, onSort }) {
   return (
     <div
       style={{
@@ -194,13 +259,9 @@ function HeaderRow() {
         borderBottom: `1px solid ${C.borderSoft}`,
       }}
     >
-      <div style={cell}>Risk</div>
-      <div style={cell}>Account</div>
-      <div style={cell}>Opportunity owner</div>
-      <div style={cell}>Sales manager</div>
-      <div style={cell}>Stage</div>
-      <div style={cell}>Forecast</div>
-      <div style={{ ...cell, textAlign: "right" }}>ARR</div>
+      {COLUMNS.map((c) => (
+        <SortHeader key={c.key} col={c} sort={sort} onSort={onSort} />
+      ))}
     </div>
   );
 }
@@ -209,12 +270,84 @@ function money(n) {
   return n >= 1e6 ? `$${(n / 1e6).toFixed(2)}M` : `$${Math.round(n / 1000)}k`;
 }
 
+// Region group header — click anywhere to fold/unfold. Counts stay visible when
+// collapsed so a VP can hide a region and still see its exposure.
+function RegionHeader({ region, count, atRisk, collapsed, onToggle }) {
+  return (
+    <button
+      onClick={onToggle}
+      aria-expanded={!collapsed}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        width: "100%",
+        padding: "2px 4px 9px",
+        border: "none",
+        background: "transparent",
+        cursor: "pointer",
+        fontFamily: "inherit",
+        textAlign: "left",
+      }}
+    >
+      <span
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          width: 16,
+          fontSize: 11,
+          color: C.muted,
+          transform: collapsed ? "rotate(-90deg)" : "none",
+          transition: "transform .15s",
+        }}
+      >
+        ▼
+      </span>
+      <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.02em", color: C.text }}>
+        {region}
+      </span>
+      <span
+        style={{
+          fontSize: 11.5,
+          fontWeight: 500,
+          color: C.muted,
+          background: "oklch(0.95 0.004 260)",
+          padding: "2px 9px",
+          borderRadius: 20,
+        }}
+      >
+        {count} deals
+      </span>
+      <span style={{ fontSize: 12, color: "oklch(0.5 0.012 260)" }}>
+        {money(atRisk)} forecasted at risk
+      </span>
+      {collapsed && (
+        <span style={{ fontSize: 11.5, color: C.faint, marginLeft: 2 }}>· hidden</span>
+      )}
+    </button>
+  );
+}
+
 export default function DealsTab({ deals, regionOrder, filters, setFilters, onOpen, onHover, onLeave }) {
+  const [sort, setSort] = useState({ col: "risk", dir: "desc" });
+  const [collapsed, setCollapsed] = useState({});
+
   const toggle = (key, val) =>
     setFilters((f) => ({
       ...f,
       [key]: f[key].includes(val) ? f[key].filter((x) => x !== val) : f[key].concat(val),
     }));
+
+  const onSort = (col) =>
+    setSort((s) =>
+      s.col === col
+        ? { col, dir: s.dir === "asc" ? "desc" : "asc" }
+        : { col, dir: SORT_KEYS[col].defaultDir }
+    );
+
+  const toggleRegion = (region) =>
+    setCollapsed((c) => ({ ...c, [region]: !c[region] }));
 
   const shown = deals.filter(
     (d) =>
@@ -227,7 +360,7 @@ export default function DealsTab({ deals, regionOrder, filters, setFilters, onOp
     .map((region) => {
       const rows = shown.filter((d) => d.region === region);
       const atRisk = rows.reduce((s, d) => s + d.arr, 0);
-      return { region, rows, atRisk };
+      return { region, rows: sortRows(rows, sort), atRisk };
     })
     .filter((g) => g.rows.length > 0);
 
@@ -244,36 +377,28 @@ export default function DealsTab({ deals, regionOrder, filters, setFilters, onOp
         </div>
       </div>
 
-      {groups.map((g) => (
-        <div key={g.region} style={{ marginBottom: 22 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "0 4px 9px" }}>
-            <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.02em", color: C.text }}>
-              {g.region}
-            </span>
-            <span
-              style={{
-                fontSize: 11.5,
-                fontWeight: 500,
-                color: C.muted,
-                background: "oklch(0.95 0.004 260)",
-                padding: "2px 9px",
-                borderRadius: 20,
-              }}
-            >
-              {g.rows.length} deals
-            </span>
-            <span style={{ fontSize: 12, color: "oklch(0.5 0.012 260)" }}>
-              {money(g.atRisk)} forecasted at risk
-            </span>
+      {groups.map((g) => {
+        const isCollapsed = !!collapsed[g.region];
+        return (
+          <div key={g.region} style={{ marginBottom: 22 }}>
+            <RegionHeader
+              region={g.region}
+              count={g.rows.length}
+              atRisk={g.atRisk}
+              collapsed={isCollapsed}
+              onToggle={() => toggleRegion(g.region)}
+            />
+            {!isCollapsed && (
+              <div style={{ background: "#fff", border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
+                <HeaderRow sort={sort} onSort={onSort} />
+                {g.rows.map((d) => (
+                  <DealRow key={d.id} deal={d} onOpen={onOpen} onHover={onHover} onLeave={onLeave} />
+                ))}
+              </div>
+            )}
           </div>
-          <div style={{ background: "#fff", border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
-            <HeaderRow />
-            {g.rows.map((d) => (
-              <DealRow key={d.id} deal={d} onOpen={onOpen} onHover={onHover} onLeave={onLeave} />
-            ))}
-          </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

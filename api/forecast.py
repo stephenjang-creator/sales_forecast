@@ -99,14 +99,18 @@ def _deal_dict(row) -> dict:
     arr = float(row["arr"])
     mrr = float(row["mrr"]) if "mrr" in row and row["mrr"] == row["mrr"] else round(arr / 12)
     nm = row.get("next_meeting_date")
+    stage = str(row["stage"])
+    fc = str(row["forecast_category"])
     return {
         "id": str(row["deal_id"]),
         "account": str(row["account"]),
         "region": str(row["region"]),
         "segment": str(row["segment"]),
         "industry": str(row.get("industry", "")),
-        "stage": str(row["stage"]),
-        "fc": str(row["forecast_category"]),
+        "stage": stage,
+        "stageRank": config.STAGE_ORDER.get(stage, 99),
+        "fc": fc,
+        "fcRank": config.FORECAST_ORDER.get(fc, 99),
         "risk": risk,
         "tier": tier_of(risk),
         "amount": arr,

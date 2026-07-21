@@ -14,6 +14,28 @@ LATE_STAGES = ("Proposal", "Negotiation")
 OPEN_STAGES = ("Discovery", "Qualification", "Proposal", "Negotiation")
 EARLY_STAGES = ("Discovery", "Qualification")
 
+# Canonical sales-cycle order for sorting (qualify the lead, then discover the
+# need, then propose, then negotiate; closed stages last). Shared with the API so
+# the dashboard sorts the Stage column by funnel position, not alphabetically.
+STAGE_ORDER = {
+    "Qualification": 1,
+    "Discovery": 2,
+    "Proposal": 3,
+    "Negotiation": 4,
+    "Closed Won": 5,
+    "Closed Lost": 6,
+}
+# Forecast-category order for sorting, most-committed first. Reps only call a deal
+# Best Case once it reaches Proposal and Commit once it reaches Negotiation, so
+# the categories double as a rough confidence ladder (Closed is booked).
+FORECAST_ORDER = {
+    "Closed": 1,
+    "Commit": 2,
+    "Best Case": 3,
+    "Pipeline": 4,
+    "Omitted": 5,
+}
+
 # Typical days a healthy deal sits in each open stage.
 STAGE_NORMAL_DAYS = {
     "Discovery": 21,

@@ -273,7 +273,11 @@ def _base_record(i, today):
     scores = _meddpicc_scores(stage, healthy=True)
     total, conf = _meddpicc_rollup(scores)
 
-    # forecast category loosely tied to stage + qualification
+    # Forecast category follows how reps actually call deals: Commit only appears
+    # at Negotiation (and only with real qualification behind it), Best Case not
+    # until Proposal, and early-stage deals sit in Pipeline/Omitted. Closed deals
+    # get the "Closed" category in a post-pass (_assign_closed_forecast) so this
+    # open-stage draw sequence stays byte-identical.
     if stage == "Negotiation" and conf >= 60:
         fcat = random.choice(["Commit", "Best Case"])
     elif stage in ("Proposal", "Negotiation"):
@@ -448,6 +452,19 @@ def _build_region_org(records, seed):
     return org
 
 
+def _assign_closed_forecast(records):
+    """Give closed (won/lost) deals the "Closed" forecast category.
+
+    Open deals keep the stage-gated category assigned in ``_base_record``
+    (Commit only at Negotiation, Best Case only at Proposal+). This post-pass
+    touches only closed-stage rows and uses no RNG, so every other column -- and
+    the detector scorecard -- stays byte-identical.
+    """
+    for rec in records:
+        if rec["stage"] in ("Closed Won", "Closed Lost"):
+            rec["forecast_category"] = "Closed"
+
+
 def _next_meeting(rec, today, rng):
     """Upcoming meeting date for an open deal (or "" if none / closed).
 
@@ -500,6 +517,9 @@ def build(n=600, seed=42, anomaly_rate=0.18):
 
     for rec in records:
         _derive(rec, today)
+
+    # Booked deals are "Closed" in the forecast (no RNG; open deals untouched).
+    _assign_closed_forecast(records)
 
     # Assign next-meeting dates from a dedicated RNG so this new column does not
     # shift the main random sequence (every other column stays reproducible).

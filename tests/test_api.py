@@ -31,7 +31,9 @@ def test_full_payload_shape() -> None:
         "segment",
         "industry",
         "stage",
+        "stageRank",
         "fc",
+        "fcRank",
         "risk",
         "tier",
         "amount",
@@ -49,6 +51,37 @@ def test_full_payload_shape() -> None:
     assert 0 <= d["risk"] <= 9
     assert d["tier"] in ("Critical", "High", "Medium", "Low")
     assert d["rules"] and {"id", "label", "reason", "action"} <= set(d["rules"][0].keys())
+
+
+def test_sort_ranks_are_present_and_ordered() -> None:
+    import config
+
+    deals = forecast.flagged_deals()
+    # Every flagged deal carries a numeric stage + forecast rank the UI sorts on.
+    for d in deals:
+        assert d["stageRank"] == config.STAGE_ORDER.get(d["stage"], 99)
+        assert d["fcRank"] == config.FORECAST_ORDER.get(d["fc"], 99)
+    # The canonical order the VP asked for: Qualification -> Discovery -> Proposal
+    # -> Negotiation, and Closed -> Commit -> Best Case -> Pipeline -> Omitted.
+    assert config.STAGE_ORDER["Qualification"] < config.STAGE_ORDER["Discovery"]
+    assert config.STAGE_ORDER["Discovery"] < config.STAGE_ORDER["Negotiation"]
+    assert config.FORECAST_ORDER["Closed"] < config.FORECAST_ORDER["Commit"]
+    assert config.FORECAST_ORDER["Commit"] < config.FORECAST_ORDER["Omitted"]
+
+
+def test_closed_deals_carry_closed_forecast() -> None:
+    import pandas as pd
+
+    from api.forecast import _csv_path
+
+    df = pd.read_csv(_csv_path())
+    closed = df[df["stage"].isin(["Closed Won", "Closed Lost"])]
+    assert not closed.empty
+    assert (closed["forecast_category"] == "Closed").all()
+    # Reps only call a deal Best Case at Proposal+ and Commit at Negotiation:
+    # no healthy early-stage deal should be Best Case.
+    early = df[df["stage"].isin(["Discovery", "Qualification"])]
+    assert (early["forecast_category"] != "Best Case").all()
 
 
 def test_deals_are_flagged_and_sorted() -> None:
