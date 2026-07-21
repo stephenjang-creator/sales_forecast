@@ -6,6 +6,7 @@ import AgentBar from "./components/AgentBar.jsx";
 import Summary from "./components/Summary.jsx";
 import FastMover from "./components/FastMover.jsx";
 import DealsTab from "./components/DealsTab.jsx";
+import BookingsTab from "./components/BookingsTab.jsx";
 import HealthTab from "./components/HealthTab.jsx";
 import Drawer from "./components/Drawer.jsx";
 import HoverPeek, { peekPosition } from "./components/HoverPeek.jsx";
@@ -90,14 +91,16 @@ export default function App() {
 
         <div style={{ display: "flex", alignItems: "center", gap: 4, borderBottom: `1px solid ${C.border}`, marginBottom: 20 }}>
           {tabBtn("deals", "Flagged deals")}
+          {tabBtn("bookings", "Bookings")}
           {tabBtn("health", "Model health")}
         </div>
 
-        {tab === "deals" ? (
+        {tab === "deals" && (
           <DealsTab
             deals={data.deals}
             bookedDeals={data.bookedDeals || []}
             regionOrder={data.regionOrder}
+            asOf={data.bookings?.asOf}
             filters={filters}
             setFilters={setFilters}
             onOpen={(d) => {
@@ -107,9 +110,9 @@ export default function App() {
             onHover={(deal, rect) => setHover({ deal, pos: peekPosition(rect) })}
             onLeave={() => setHover(null)}
           />
-        ) : (
-          <HealthTab scorecard={data.scorecard} />
         )}
+        {tab === "bookings" && <BookingsTab bookings={data.bookings} />}
+        {tab === "health" && <HealthTab scorecard={data.scorecard} />}
       </div>
 
       {hover && !selected && <HoverPeek deal={hover.deal} pos={hover.pos} />}

@@ -5,6 +5,33 @@ const GRID = "74px minmax(170px,1.5fr) 136px 118px 116px 100px 112px";
 const TIERS = ["Critical", "High", "Medium", "Low"];
 const SEGMENTS = ["Enterprise", "Mid-Market", "SMB"];
 
+// Filter by the period a deal's close (or booking) date falls in, relative to the
+// data's "as of" date. Open deals filter on their projected close; booked deals on
+// when they closed. ISO strings compare lexically, so YTD is a plain string range.
+const PERIODS = [
+  { key: "all", label: "All dates" },
+  { key: "month", label: "This month" },
+  { key: "quarter", label: "This quarter" },
+  { key: "ytd", label: "YTD" },
+  { key: "year", label: "This year" },
+];
+
+const quarterOf = (m) => Math.floor((m - 1) / 3) + 1;
+
+function inPeriod(iso, period, asOf) {
+  if (period === "all" || !asOf) return true;
+  if (!iso) return false;
+  const ay = +asOf.slice(0, 4);
+  const am = +asOf.slice(5, 7);
+  const y = +iso.slice(0, 4);
+  const m = +iso.slice(5, 7);
+  if (period === "month") return y === ay && m === am;
+  if (period === "quarter") return y === ay && quarterOf(m) === quarterOf(am);
+  if (period === "year") return y === ay;
+  if (period === "ytd") return y === ay && iso <= asOf;
+  return true;
+}
+
 const FORECAST_INFO =
   "Forecast rollup, most-committed first — Closed (Won, booked) › Commit " +
   "(only at Negotiation) › Best Case (only at Proposal+) › Pipeline (in the funnel) " +
@@ -433,6 +460,7 @@ export default function DealsTab({
   deals,
   bookedDeals = [],
   regionOrder,
+  asOf,
   filters,
   setFilters,
   onOpen,
@@ -442,6 +470,7 @@ export default function DealsTab({
   const [sort, setSort] = useState({ col: "risk", dir: "desc" });
   const [collapsed, setCollapsed] = useState({});
   const [showClosed, setShowClosed] = useState(true);
+  const [period, setPeriod] = useState("all");
 
   const toggle = (key, val) =>
     setFilters((f) => ({
@@ -465,10 +494,14 @@ export default function DealsTab({
     (filters.regions.length === 0 || filters.regions.includes(d.region)) &&
     (filters.segments.length === 0 || filters.segments.includes(d.segment));
 
+  const inP = (d) => inPeriod(d.closeISO, period, asOf);
   const shown = deals.filter(
-    (d) => inRegionSeg(d) && (filters.tiers.length === 0 || filters.tiers.includes(tierOf(d.risk)))
+    (d) =>
+      inRegionSeg(d) &&
+      inP(d) &&
+      (filters.tiers.length === 0 || filters.tiers.includes(tierOf(d.risk)))
   );
-  const closedShown = showClosed ? bookedDeals.filter(inRegionSeg) : [];
+  const closedShown = showClosed ? bookedDeals.filter((d) => inRegionSeg(d) && inP(d)) : [];
 
   const groups = regionOrder
     .map((region) => {
@@ -500,6 +533,26 @@ export default function DealsTab({
             <span style={{ color: C.positive }}> · {closedShown.length} booked</span>
           )}
         </div>
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 18 }}>
+        <span
+          style={{
+            fontSize: 11,
+            fontWeight: 600,
+            letterSpacing: "0.03em",
+            textTransform: "uppercase",
+            color: C.muted,
+          }}
+        >
+          Close period
+        </span>
+        {PERIODS.map((p) => (
+          <Pill key={p.key} label={p.label} active={period === p.key} onClick={() => setPeriod(p.key)} />
+        ))}
+        <span style={{ fontSize: 11.5, color: C.faint, marginLeft: 4 }}>
+          by projected close (open) / booking date (closed)
+        </span>
       </div>
 
       {groups.map((g) => {

@@ -27,6 +27,7 @@ Usage:
 import argparse
 import math
 import random
+from calendar import monthrange
 from datetime import date, timedelta
 
 import pandas as pd
@@ -459,6 +460,41 @@ def _build_region_org(records, seed):
     return org
 
 
+def _assign_booked_dates(records, today, seed):
+    """Spread Closed Won (booked) deals across the trailing ~30 months.
+
+    A booked deal's close date is its **booking date**, so it must be in the past
+    (a won deal cannot close in the future) and spread over history so bookings
+    roll up YoY / QoQ / MoM / YTD. The spread is recency-weighted (a mild growth
+    trend -- recent months book ~2x the oldest) and each deal's created date is
+    pulled back a realistic cycle before it booked.
+
+    Closed Won deals are never anomaly-injected and are skipped by every rule, so
+    rewriting their dates here (from a dedicated RNG) leaves open deals and the
+    detector scorecard byte-identical. Open deals keep the forward-looking
+    projected close date set in ``_base_record``.
+    """
+    rng = random.Random(seed + 909)
+    horizon = 30  # months of booking history (covers 3 calendar years for YoY)
+    weights = [2 * horizon - o for o in range(horizon)]  # recent ~2x the oldest
+    for rec in records:
+        if rec["stage"] != "Closed Won":
+            continue
+        offset = rng.choices(range(horizon), weights=weights)[0]
+        year, month = today.year, today.month - offset
+        while month <= 0:
+            month += 12
+            year -= 1
+        last_day = monthrange(year, month)[1]
+        hi = today.day if (year == today.year and month == today.month) else last_day
+        booked = date(year, month, rng.randint(1, max(1, hi)))
+        rec["close_date"] = booked
+        rec["orig_close_date"] = booked  # booked as forecast; no slip
+        rec["stage_entry_date"] = booked  # entered Closed Won on the booking date
+        rec["created_date"] = booked - timedelta(days=rng.randint(45, 210))
+        rec["close_date_pushes"] = 0
+
+
 def _assign_closed_forecast(records):
     """Forecast category for booked/lost deals.
 
@@ -543,6 +579,10 @@ def build(n=600, seed=42, anomaly_rate=0.18):
                     break
         if applied:
             rec["is_anomaly"] = True
+
+    # Give Closed Won deals their historical booking dates before deriving the
+    # day-count fields, so days_open/days_to_close reflect the real booking date.
+    _assign_booked_dates(records, today, seed)
 
     for rec in records:
         _derive(rec, today)

@@ -98,6 +98,38 @@ def test_booked_deals_have_no_risk() -> None:
         assert d["risk"] == 0 and d["rules"] == []
 
 
+def test_booked_deals_close_in_the_past() -> None:
+    # A booked deal's close date is its booking date -- it must be in the past,
+    # and spread over history so bookings roll up YoY/QoQ/MoM.
+    from datetime import date
+
+    booked = forecast.booked_deals()
+    today = date.today().isoformat()
+    isos = [d["closeISO"] for d in booked]
+    assert all(iso and iso <= today for iso in isos)
+    assert len({iso[:4] for iso in isos}) >= 2, "expected multiple booking years for YoY"
+
+
+def test_open_deals_have_projected_close() -> None:
+    from datetime import date
+
+    today = date.today().isoformat()
+    opens = forecast.flagged_deals()  # flagged deals are all open
+    assert opens and all(d["closeISO"] and d["closeISO"] >= today for d in opens)
+
+
+def test_bookings_summary_shape() -> None:
+    bk = forecast.bookings_summary()
+    for grain in ("month", "quarter", "year"):
+        assert bk["series"][grain], f"expected a {grain} series"
+    for key in ("ytd", "yoy", "qoq", "mom"):
+        assert {"booked", "priorBooked", "pct"} <= set(bk[key].keys())
+    # Booked totals reconcile: the year series sums to the all-time booked figure.
+    year_total = sum(p["booked"] for p in bk["series"]["year"])
+    booked_arr, _ = forecast._booked_totals()
+    assert abs(year_total - round(booked_arr)) <= len(bk["series"]["year"])  # rounding
+
+
 def test_deals_are_flagged_and_sorted() -> None:
     deals = forecast.flagged_deals()
     assert deals
