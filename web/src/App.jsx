@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { askAgent, exportCsv, fetchForecast } from "./api.js";
 import { ACCENT, C } from "./tokens.js";
-import { inTimeframe, tfLabel, tfShort } from "./time.js";
+import { inTimeframe, sumPipeline, tfLabel, tfShort } from "./time.js";
 import Header from "./components/Header.jsx";
 import AgentBar from "./components/AgentBar.jsx";
 import Summary from "./components/Summary.jsx";
@@ -55,23 +55,33 @@ export default function App() {
     return <Center>Could not load the forecast — is the API running? ({error})</Center>;
   if (!data) return <Center>Loading forecast…</Center>;
 
-  // Booked figures are timeframe-scoped (client-side); the open pipeline is not.
+  // The timeframe scopes the whole forecast by close date. Projection tiles +
+  // narrative are computed client-side from the per-month pipeline buckets so they
+  // react to the header control: booked (won) + open pipeline projected to close
+  // → a risk-adjusted projection, plus flagged-at-risk ARR, all for the period.
   const asOf = data.bookings?.asOf;
   const money = (n) => (n >= 1e6 ? `$${(n / 1e6).toFixed(2)}M` : `$${Math.round(n / 1000)}k`);
+  const tl = tfLabel(timeframe);
+  const p = sumPipeline(data.pipelineByMonth, timeframe, asOf);
   const bookedInTf = (data.bookedDeals || []).filter((d) => inTimeframe(d.closeISO, timeframe, asOf));
-  const bookedArr = bookedInTf.reduce((s, d) => s + d.arr, 0);
+
+  const byRegion = {};
+  data.deals
+    .filter((d) => d.risk >= 5 && inTimeframe(d.closeISO, timeframe, asOf))
+    .forEach((d) => (byRegion[d.region] = (byRegion[d.region] || 0) + d.arr));
+  const topRegion = Object.entries(byRegion).sort((a, b) => b[1] - a[1])[0];
+
   const kpis = [
-    {
-      label: `Booked · ${tfLabel(timeframe)}`,
-      value: money(bookedArr),
-      sub: `${bookedInTf.length} closed-won`,
-      tone: "booked",
-    },
-    ...data.kpis,
+    { label: `Booked · ${tl}`, value: money(p.booked), sub: `${bookedInTf.length} closed-won`, tone: "booked" },
+    { label: `Open pipeline · ${tl}`, value: money(p.open), sub: `${p.openDeals} deals to close`, tone: "muted" },
+    { label: `Projected · ${tl}`, value: money(p.projected), sub: "booked + risk-adjusted", tone: "muted" },
+    { label: `At risk · ${tl}`, value: money(p.atRisk), sub: "flagged, in period", tone: "warning" },
   ];
   const narrative =
-    `Booked ${tfShort(timeframe)}: ${money(bookedArr)} across ${bookedInTf.length} closed-won. ` +
-    data.narrative;
+    `Projecting ${tfShort(timeframe)}: ${money(p.booked)} already booked + ${money(p.open)} open pipeline ` +
+    `across ${p.openDeals} deals → ${money(p.projected)} risk-adjusted projection. ` +
+    `${money(p.atRisk)} is flagged at risk` +
+    (topRegion ? `, concentrated in ${topRegion[0]} (${money(topRegion[1])}).` : ".");
 
   const tabBtn = (key, label) => (
     <button

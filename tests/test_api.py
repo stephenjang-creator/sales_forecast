@@ -120,6 +120,24 @@ def test_open_deals_have_projected_close() -> None:
     assert opens and all(d["closeISO"] and d["closeISO"] >= today for d in opens)
 
 
+def test_pipeline_by_month_in_payload() -> None:
+    p = forecast.full_payload()
+    pbm = p["pipelineByMonth"]
+    assert pbm, "expected per-month pipeline buckets"
+    b = pbm[0]
+    expected = {
+        "period",
+        "won_arr",
+        "open_arr",
+        "risk_adjusted_open_arr",
+        "flagged_open_arr",
+        "open_deals",
+    }
+    assert expected <= set(b.keys())
+    # Buckets are chronological and keyed by calendar month.
+    assert b["period"][:4].isdigit() and b["period"][4] == "-"
+
+
 def test_bookings_summary_shape() -> None:
     bk = forecast.bookings_summary()
     for grain in ("month", "quarter", "year"):

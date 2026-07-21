@@ -355,6 +355,7 @@ def full_payload() -> dict:
         "deals": deals,
         "bookedDeals": booked_deals(),
         "bookings": bookings_summary(),
+        "pipelineByMonth": periods.pipeline_by_period(_scored(), "month"),
         **kpis_and_summary(deals),
         "fastMover": fast_mover(),
         "scorecard": scorecard(),

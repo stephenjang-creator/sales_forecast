@@ -6,7 +6,7 @@ import { TIMEFRAMES } from "../time.js";
 function TimeframeControl({ timeframe, onTimeframe }) {
   return (
     <div
-      title="Scopes booked (Closed Won) figures — the open pipeline is unaffected"
+      title="Scopes the whole forecast by close date — booked deals + open pipeline projected to close in the period"
       style={{
         display: "flex",
         gap: 3,

@@ -472,14 +472,14 @@ export default function DealsTab({
     (filters.regions.length === 0 || filters.regions.includes(d.region)) &&
     (filters.segments.length === 0 || filters.segments.includes(d.segment));
 
-  // Open flagged deals are never timeframe-scoped. Booked deals are scoped by the
-  // header timeframe (which booking window to count) and the Closed Won toggle.
+  // The timeframe scopes the whole table by close date: open flagged deals by
+  // their projected close, booked deals by their booking date. So the list shows
+  // exactly what makes up the forecast for the selected period.
+  const inTf = (d) => inTimeframe(d.closeISO, timeframe, asOf);
   const shown = deals.filter(
-    (d) => inRegionSeg(d) && (filters.tiers.length === 0 || filters.tiers.includes(tierOf(d.risk)))
+    (d) => inRegionSeg(d) && inTf(d) && (filters.tiers.length === 0 || filters.tiers.includes(tierOf(d.risk)))
   );
-  const closedShown = showClosed
-    ? bookedDeals.filter((d) => inRegionSeg(d) && inTimeframe(d.closeISO, timeframe, asOf))
-    : [];
+  const closedShown = showClosed ? bookedDeals.filter((d) => inRegionSeg(d) && inTf(d)) : [];
 
   const groups = regionOrder
     .map((region) => {
