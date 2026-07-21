@@ -97,13 +97,13 @@ async def gather_deal_context(
 
 
 async def gather_region_actions(
-    session: ClientSession, region: str, region_aware: bool = False, top_n: int = 3
+    session: ClientSession, region: str, region_aware: bool = False, max_deals: int = 10
 ) -> dict:
-    """The region's top-N prioritized actions (``region_top_actions``), via tools."""
+    """The region's top prioritized deals + plays (``region_top_actions``), via tools."""
     return await call_tool(
         session,
         "region_top_actions",
-        {"region": region, "region_aware": region_aware, "top_n": top_n},
+        {"region": region, "region_aware": region_aware, "max_deals": max_deals},
     )
 
 

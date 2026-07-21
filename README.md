@@ -359,22 +359,25 @@ flag; the plays *respond* to the flags the rules already set.
   then personalizes the plays to the deal — a talk track for the next call,
   sharpened next steps, the right owner.
 - **Prioritize a region** (`--region NA` / `--all`): reads `region_top_actions`
-  and gives the VP their **top N things to do today** (default 3), ranked. Each
-  action is **one play that can cover several deals**, and deals are named the way
-  reps think — **company + MRR**, a few of the most-actionable accounts, with the
-  rest summarized by dollar value (never a wall of ids):
+  and gives the VP the **top deals to act on today** — the highest-priority
+  `max_deals` (default 10) region-wide, grouped by the play to run. Every surfaced
+  deal is **listed by company + MRR** (how reps think) — no hidden "+N more" tail;
+  raise `--max-deals` to see more:
 
   ```
-  1. ⚡ Pull it forward and close — 22 deals · $77,920/mo   [rep]
-     • Soylent Group ($3,990/mo) — Negotiation
-     • Nakatomi Labs ($3,630/mo) — Negotiation
-     • …plus 17 more ($58,830/mo)
+  1. ⚠ Reset the close plan — 4 deals · $17,980/mo   [rep + manager]
+     • Acme Group ($6,930/mo) — Negotiation
+     • Nakatomi Technologies ($3,850/mo) — Negotiation
+     • Wayne Group ($3,680/mo) — Negotiation
+     • Gekko Systems ($3,520/mo) — Negotiation
+  2. ⚠ Kick off procurement and legal — 4 deals · $15,360/mo   [rep + deal desk]
+     • …
   ☎ Join these calls yourself (VP time is scarce):
      • Acme Group ($6,930/mo): VP champion engaged — Reset the close plan
   ```
 
   Ranking favors **bottom-of-funnel, well-championed deals** (a few steps from
-  close) and **fast movers**: weight = urgency × funnel-depth(stage) ×
+  close) and **fast movers**: each deal's weight = urgency × funnel-depth(stage) ×
   champion-boost (all tunable in `config.py`). It also splits the VP's two levers —
   the actions are plays to **delegate to managers via a note** (they scale), plus a
   short, capped **`vp_should_join_calls`** shortlist of senior-stakeholder deals

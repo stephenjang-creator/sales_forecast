@@ -132,3 +132,6 @@ GOOD_M_CHAMPION_MIN = 2  # m_champion (0-3) at/above this counts as a good champ
 # capped and skews to senior stakeholders.
 VP_CALL_CAPACITY = 3  # how many calls the VP can personally join in a day
 CALL_STAKEHOLDER_MIN = "VP"  # champion at/above this rank => "higher-level person"
+# The worklist surfaces the top-priority DEALS region-wide (grouped by play) and
+# lists every one -- no hidden "+N more" tail. This bounds how many a VP sees.
+REGION_MAX_DEALS = 10

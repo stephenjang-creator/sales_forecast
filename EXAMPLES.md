@@ -173,16 +173,19 @@ seed 42); yours will differ if you point `FORECAST_CSV` at your own export.
 ### 17. Regional VP priorities — "what are my top 3 things?"
 > **"I run NA — what are the top 3 things my team should do today?"**
 
-- **Call:** `region_top_actions("NA", top_n=3)` (deterministic), or the
+- **Call:** `region_top_actions("NA", max_deals=10)` (deterministic), or the
   `sales_guru` agent (`--region NA` / `--all`) to narrate it.
-- **Returns:** a single ranked list of `actions` (each **one play that can cover
-  several deals** — e.g. "run a MEDDPICC qualification call" across every
-  thin-Commit deal — with `kind`, `deal_count`, `arr_at_stake`, the covered
+- **Returns:** the top `max_deals` (default 10) deals region-wide, grouped by the
+  play to run — a ranked list of `actions` (each **one play that can cover several
+  deals**, with `kind`, `deal_count`, `arr_at_stake`, `mrr_at_stake`, the covered
   `deals`, and a `priority_score`), plus a short **`vp_should_join_calls`** list.
-- **How it's ranked:** weight = urgency × funnel-depth(stage) × champion-boost, so
-  **bottom-of-funnel, well-championed deals** (a few steps from close) and **fast
-  movers** rise to the top. Each covered deal carries `champion_seniority` and
-  `good_champion`, and the deals within an action are ordered most-actionable first.
+  Every surfaced deal is listed — there is no "+N more" tail; `surfaced_deals` /
+  `actionable_deals` report the budget vs. the region total.
+- **How it's ranked:** each deal's weight = urgency × funnel-depth(stage) ×
+  champion-boost, so **bottom-of-funnel, well-championed deals** (a few steps from
+  close) and **fast movers** rise to the top; the top `max_deals` are taken, then
+  grouped by play. Each covered deal carries `label` (company + MRR),
+  `champion_seniority`, and `good_champion`.
 - **Two levers (matches how a VP works):** the `actions` are plays to **delegate
   to managers via a note** — they scale, so no cap. `vp_should_join_calls` is a
   short, capped list (`config.VP_CALL_CAPACITY`) of **senior-stakeholder** deals

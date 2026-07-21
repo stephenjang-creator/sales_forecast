@@ -42,6 +42,7 @@ import json
 import os
 import sys
 
+import config
 from agents.mcp_client import (
     anthropic_tool_schema,
     call_tool,
@@ -53,9 +54,6 @@ from agents.mcp_client import (
 DEFAULT_MODEL = os.environ.get("FORECAST_AGENT_MODEL", "claude-sonnet-4-6")
 MAX_ITERS = 6
 MAX_TOKENS = 1500
-# How many named deals to show per action before summarizing the rest as an
-# aggregate. Reps want a few specific accounts to act on, not a wall of ids.
-DEALS_SHOWN = 5
 
 # --------------------------------------------------------------------------- #
 # Structured "submit" tools -- force a clean, grounded final answer.
@@ -103,21 +101,17 @@ _ACTION_ITEM = {
         "owner": {"type": "string"},
         "deal_count": {"type": "integer", "description": "How many deals this action covers."},
         "mrr_at_stake": {"type": "number", "description": "Combined MRR of the covered deals."},
-        "top_deals": {
+        "deals": {
             "type": "array",
             "items": {"type": "string"},
             "description": (
-                "The few (~5 max) most-actionable accounts, each as company + MRR "
-                "(+ stage), e.g. 'Acme Group ($8,200/mo) — Negotiation'. Never a "
-                "deal_id."
+                "Every account this action covers (the tool already bounded the "
+                "set), each as company + MRR (+ stage), e.g. 'Acme Group "
+                "($8,200/mo) — Negotiation'. Never a deal_id."
             ),
         },
-        "more": {
-            "type": "string",
-            "description": "Aggregate for deals beyond top_deals, e.g. 'plus 12 more ($40k/mo)'.",
-        },
     },
-    "required": ["priority", "action", "top_deals"],
+    "required": ["priority", "action", "deals"],
 }
 
 _CALL_ITEM = {
@@ -135,12 +129,13 @@ _SUBMIT_ACTIONS = {
         "Submit the regional VP's prioritized worklist. Call exactly once, after "
         "reading region_top_actions. `actions` are plays the VP DELEGATES to "
         "managers via a note (one move may cover several deals): for each, list "
-        "only the top ~5 accounts in top_deals (by company + MRR, from the tool's "
-        "deals[].label, most-actionable first) and summarize the rest in `more`. "
-        "`calls_to_join` is the short list of deals the VP should personally join a "
-        "call on -- use only region_top_actions' vp_should_join_calls, named by "
-        "company + MRR. Keep actions in priority order; use only the deals the tool "
-        "returned; never show a deal_id."
+        "every account the tool surfaced for it, by company + MRR (the tool's "
+        "deals[].label), most-actionable first -- the tool already capped the set, "
+        "so do not drop or summarize any. `calls_to_join` is the short list of "
+        "deals the VP should personally join a call on -- use only "
+        "region_top_actions' vp_should_join_calls, named by company + MRR. Keep "
+        "actions in priority order; use only the deals the tool returned; never "
+        "show a deal_id."
     ),
     "input_schema": {
         "type": "object",
@@ -181,9 +176,10 @@ _REGION_SYSTEM = (
     "short and skews to senior-stakeholder deals); pass those through as "
     "calls_to_join. Lead with the highest-leverage action. Always name deals by "
     "COMPANY and MRR (the tool's deals[].label, e.g. 'Acme Group ($8,200/mo)') -- "
-    "never a deal_id -- and for each action list only the top ~5 accounts, "
-    "summarizing the rest in `more`. Use only the deals the tool returned; never "
-    "invent a deal or number. When finished, call submit_region_actions once."
+    "never a deal_id -- and for each action list every account the tool surfaced "
+    "(it already capped the set to the top-priority deals; don't drop any). Use "
+    "only the deals the tool returned; never invent a deal or number. When "
+    "finished, call submit_region_actions once."
 )
 
 _CHAT_SYSTEM = (
@@ -250,19 +246,13 @@ def _deal_line(deal: dict) -> str:
 def _deterministic_actions(plan: dict) -> dict:
     """Region worklist straight from region_top_actions -- offline / fallback.
 
-    Shows a few named accounts (company + MRR) per action, most-actionable first,
-    then summarizes the rest as an aggregate ("plus N more, $X/mo") -- never a
-    bare id dump.
+    Lists every surfaced deal by company + MRR (the tool already bounded the set
+    to the top-priority deals region-wide), most-actionable first. No hidden tail.
     """
     tool_actions = plan.get("actions", []) if isinstance(plan, dict) else []
     actions = []
     for a in tool_actions:
         deals = a.get("deals", [])
-        shown, rest = deals[:DEALS_SHOWN], deals[DEALS_SHOWN:]
-        more = None
-        if rest:
-            rest_mrr = sum((d.get("mrr") or 0.0) for d in rest)
-            more = f"plus {len(rest)} more (${rest_mrr:,.0f}/mo)"
         actions.append(
             {
                 "priority": a["priority"],
@@ -272,8 +262,7 @@ def _deterministic_actions(plan: dict) -> dict:
                 "kind": a.get("kind", ""),
                 "deal_count": a.get("deal_count", len(deals)),
                 "mrr_at_stake": a.get("mrr_at_stake"),
-                "top_deals": [_deal_line(d) for d in shown],
-                "more": more,
+                "deals": [_deal_line(d) for d in deals],
             }
         )
     if actions:
@@ -378,14 +367,14 @@ async def _run_deal_guru(
 
 
 async def _run_region_guru(
-    client, session, region: str, model: str, region_aware: bool = False, top_n: int = 3
+    client, session, region: str, model: str, region_aware: bool = False, max_deals: int = 10
 ) -> dict:
     """Prioritize one region to a submit_region_actions call; return its dict."""
-    plan = await gather_region_actions(session, region, region_aware, top_n)
+    plan = await gather_region_actions(session, region, region_aware, max_deals)
     if isinstance(plan, dict) and "error" in plan:
         return {"region": region, "error": plan["error"]}
     user = (
-        f"Region: {region}. Give the VP their top {top_n} things to do today.\n\n"
+        f"Region: {region}. Give the VP their top things to do today.\n\n"
         f"Ranked actions (region_top_actions):\n{json.dumps(plan, indent=2)}\n\n"
         "State each as an imperative, name the deals it covers, lead with the "
         "highest-leverage action, then call submit_region_actions."
@@ -442,16 +431,18 @@ async def coach_deal(deal_id: str, model: str, csv_path: str | None, region_awar
         return await _run_deal_guru(client, session, deal_id, model, region_aware)
 
 
-async def coach_region(region: str, model: str, csv_path: str | None, region_aware: bool) -> dict:
+async def coach_region(
+    region: str, model: str, csv_path: str | None, region_aware: bool, max_deals: int = 10
+) -> dict:
     from anthropic import AsyncAnthropic  # lazy
 
     client = AsyncAnthropic()
     async with open_session(csv_path) as session:
-        return await _run_region_guru(client, session, region, model, region_aware)
+        return await _run_region_guru(client, session, region, model, region_aware, max_deals)
 
 
 async def coach_all(
-    regions: list[str], model: str, csv_path: str | None, region_aware: bool
+    regions: list[str], model: str, csv_path: str | None, region_aware: bool, max_deals: int = 10
 ) -> dict:
     from anthropic import AsyncAnthropic  # lazy
 
@@ -459,7 +450,7 @@ async def coach_all(
 
     async def _one(region: str) -> dict:
         async with open_session(csv_path) as session:
-            return await _run_region_guru(client, session, region, model, region_aware)
+            return await _run_region_guru(client, session, region, model, region_aware, max_deals)
 
     plans = await asyncio.gather(*(_one(r) for r in regions))
     return {"regions": list(plans)}
@@ -484,12 +475,12 @@ async def dry_run_deal(deal_id: str, csv_path: str | None, region_aware: bool) -
 
 
 async def dry_run_regions(
-    regions: list[str], csv_path: str | None, region_aware: bool, top_n: int = 3
+    regions: list[str], csv_path: str | None, region_aware: bool, max_deals: int = 10
 ) -> dict:
     out = []
     async with open_session(csv_path) as session:
         for region in regions:
-            plan = await gather_region_actions(session, region, region_aware, top_n)
+            plan = await gather_region_actions(session, region, region_aware, max_deals)
             if isinstance(plan, dict) and "error" in plan:
                 out.append({"region": region, "error": plan["error"]})
             else:
@@ -567,16 +558,15 @@ def _print_priorities(p: dict) -> None:
         tag = "⚡" if a.get("kind") == "opportunity" else "⚠"
         stake = ""
         if a.get("mrr_at_stake") is not None:
-            count = a.get("deal_count", len(a.get("top_deals", [])))
-            stake = f" — {count} deals · ${a['mrr_at_stake']:,.0f}/mo"
+            count = a.get("deal_count", len(a.get("deals", [])))
+            plural = "s" if count != 1 else ""
+            stake = f" — {count} deal{plural} · ${a['mrr_at_stake']:,.0f}/mo"
         owner = f"  [{a['owner']}]" if a.get("owner") else ""
         print(f"    {a['priority']}. {tag} {a['action']}{stake}{owner}")
         if a.get("why"):
             print(f"       ↳ {a['why']}")
-        for deal in a.get("top_deals", []):
+        for deal in a.get("deals", []):
             print(f"       • {deal}")
-        if a.get("more"):
-            print(f"       • …{a['more']}")
     calls = p.get("calls_to_join", [])
     if calls:
         print("    ☎ Join these calls yourself (VP time is scarce):")
@@ -595,8 +585,8 @@ def _print_region_report(result: dict) -> None:
     for p in result["regions"]:
         _print_priorities(p)
     print("\n" + "=" * 72)
-    print("  One action can cover several deals. Ranked by ARR-at-stake × urgency.")
-    print("  A prioritized worklist, not an attainment forecast; rules own every flag.")
+    print("  The top-priority deals region-wide, grouped by the play to run (every")
+    print("  one listed). A prioritized worklist, not an attainment forecast.")
 
 
 async def _amain(args: argparse.Namespace) -> int:
@@ -604,7 +594,7 @@ async def _amain(args: argparse.Namespace) -> int:
     ra = args.region_aware
 
     if args.chat:
-        opener = f"What are my top {args.top_n} things in {args.region}?" if args.region else None
+        opener = f"What are my top priorities in {args.region} today?" if args.region else None
         return await chat(args.model, csv_path, ra, opener)
 
     if args.deal:
@@ -617,12 +607,12 @@ async def _amain(args: argparse.Namespace) -> int:
 
     regions = [args.region] if args.region else await _discover_regions(csv_path)
     if args.dry_run:
-        result = await dry_run_regions(regions, csv_path, ra, args.top_n)
+        result = await dry_run_regions(regions, csv_path, ra, args.max_deals)
     elif args.region:
-        one = await coach_region(args.region, args.model, csv_path, ra, args.top_n)
+        one = await coach_region(args.region, args.model, csv_path, ra, args.max_deals)
         result = {"regions": [one]}
     else:
-        result = await coach_all(regions, args.model, csv_path, ra, args.top_n)
+        result = await coach_all(regions, args.model, csv_path, ra, args.max_deals)
     print(json.dumps(result, indent=2)) if args.json else _print_region_report(result)
     return 0
 
@@ -641,7 +631,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--model", default=DEFAULT_MODEL, help="Anthropic model id")
     parser.add_argument("--csv", default=None, help="pipeline CSV (else FORECAST_CSV/default)")
     parser.add_argument(
-        "--top-n", type=int, default=3, help="how many actions per region (default 3)"
+        "--max-deals",
+        type=int,
+        default=config.REGION_MAX_DEALS,
+        help=f"top deals to surface per region, all listed (default {config.REGION_MAX_DEALS})",
     )
     parser.add_argument("--dry-run", action="store_true", help="deterministic plays, no LLM/key")
     parser.add_argument(

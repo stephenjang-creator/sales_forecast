@@ -661,26 +661,26 @@ def _candidate_action(row: pd.Series):
 
 
 @mcp.tool()
-def region_top_actions(region: str, region_aware: bool = False, top_n: int = 3) -> dict:
-    """The top N things a regional VP should do today, across all active deals.
+def region_top_actions(region: str, region_aware: bool = False, max_deals: int = 10) -> dict:
+    """The top deals a regional VP should act on today, grouped by the play to run.
 
-    Scans the region's OPEN pipeline and groups deals by the play they need, so
-    ONE action can cover several deals (e.g. "run a MEDDPICC qualification call"
-    on every thin-Commit deal). Each action is ranked by ARR-at-stake weighted so
-    that BOTTOM-OF-FUNNEL, well-championed deals (a few steps from close) and fast
-    movers rise to the top -- weight = urgency x funnel-depth(stage) x champion
-    boost, all tunable in config.
+    Ranks every active (open) deal in the region by priority -- weight = urgency x
+    funnel-depth(stage) x champion boost, so BOTTOM-OF-FUNNEL, well-championed
+    deals (a few steps from close) and fast movers rise -- then takes the top
+    `max_deals` (default 10) and groups them by the play they need, so ONE action
+    can cover several deals (e.g. "run a MEDDPICC call on these 4 deals"). Every
+    surfaced deal is listed by company + MRR; there is no hidden "+N more" tail --
+    raise `max_deals` to see more.
 
     Two levers, matching how a VP actually works:
     - actions: the play-level worklist to DELEGATE to managers (send a note) --
-      one play per action, may cover many deals. Each carries the play (title,
-      first_step, owner), kind (risk|opportunity), the deals (most actionable
-      first, each with champion_seniority + good_champion), deal_count,
-      arr_at_stake, priority_score. Top `top_n` (default 3) returned.
+      each carries the play (title, first_step, owner), kind (risk|opportunity),
+      the deals it covers (most actionable first; each with label, mrr,
+      champion_seniority, good_champion), deal_count, arr_at_stake, mrr_at_stake.
+      Actions are ordered by summed priority.
     - vp_should_join_calls: a SHORT, capped shortlist (config.VP_CALL_CAPACITY) of
-      specific deals the VP should personally join a call on to pull forward --
-      the ones with a higher-level person involved (VP+/C-suite champion or a
-      C-suite approver). Calls are scarce, so this list is deliberately small.
+      senior-stakeholder deals (VP+/C-suite champion or a C-suite approver) for the
+      VP to personally join. Drawn from the whole region, not just the top deals.
 
     Set region_aware=True for the per-region overlay. A prioritized worklist, not
     an attainment forecast.
@@ -693,9 +693,9 @@ def region_top_actions(region: str, region_aware: bool = False, top_n: int = 3) 
         if sub.empty:
             return {"error": f"no active (open) deals in region {region!r}"}
 
-        # Accumulate one group per play across all active deals; also collect the
-        # deals a VP could personally join a call on (senior stakeholder present).
-        groups: dict[str, dict] = {}
+        # Score every actionable deal; also collect the deals a VP could personally
+        # join a call on (senior stakeholder present, drawn from the whole region).
+        candidates: list[dict] = []
         call_candidates: list[dict] = []
         for _, row in sub.iterrows():
             candidate = _candidate_action(row)
@@ -703,13 +703,9 @@ def region_top_actions(region: str, region_aware: bool = False, top_n: int = 3) 
                 continue
             play, kind, severity, reason = candidate
             contribution = float(row["arr"]) * _deal_priority_weight(row, kind, severity)
-            g = groups.setdefault(
-                play.rule_id, {"play": play, "kind": kind, "deals": [], "score": 0.0}
+            candidates.append(
+                {"row": row, "play": play, "kind": kind, "reason": reason, "score": contribution}
             )
-            deal = _action_deal(row, reason)
-            deal["_contribution"] = contribution
-            g["deals"].append(deal)
-            g["score"] += contribution
 
             stakeholder = _senior_stakeholder(row)
             if stakeholder is not None:
@@ -729,12 +725,23 @@ def region_top_actions(region: str, region_aware: bool = False, top_n: int = 3) 
                     }
                 )
 
+        # Take the top `max_deals` deals region-wide, then group them by play so
+        # every surfaced deal is listed under the motion that clears it.
+        candidates.sort(key=lambda c: c["score"], reverse=True)
+        surfaced = candidates[: max(1, int(max_deals))]
+        groups: dict[str, dict] = {}
+        for c in surfaced:
+            play = c["play"]
+            g = groups.setdefault(
+                play.rule_id, {"play": play, "kind": c["kind"], "deals": [], "score": 0.0}
+            )
+            g["deals"].append(_action_deal(c["row"], c["reason"]))
+            g["score"] += c["score"]
+
         ranked = sorted(groups.values(), key=lambda g: g["score"], reverse=True)
         actions = []
-        for i, g in enumerate(ranked[: max(1, int(top_n))], start=1):
-            deals = sorted(g["deals"], key=lambda d: d["_contribution"], reverse=True)
-            for deal in deals:
-                deal.pop("_contribution", None)
+        for i, g in enumerate(ranked, start=1):
+            deals = g["deals"]  # already in priority order (surfaced is sorted)
             play: Play = g["play"]
             actions.append(
                 {
@@ -761,16 +768,17 @@ def region_top_actions(region: str, region_aware: bool = False, top_n: int = 3) 
             "region": region,
             "region_aware": bool(region_aware),
             "active_deals": int(len(sub)),
-            "actions_considered": int(len(groups)),
+            "actionable_deals": int(len(candidates)),
+            "surfaced_deals": int(len(surfaced)),
             "actions": actions,
             "vp_should_join_calls": calls,
             "note": (
-                "Two levers: 'actions' are plays to DELEGATE to managers (one play "
-                "may cover many deals), ranked to favor bottom-of-funnel, "
-                "well-championed deals and fast movers; 'vp_should_join_calls' is a "
-                "short, capped list of senior-stakeholder deals for the VP to "
-                "personally join. A prioritized worklist, not an attainment forecast."
-            ),
+                "The top {} of {} actionable deals in the region, grouped by the "
+                "play to run; every surfaced deal is listed (raise max_deals for "
+                "more). 'actions' are plays to DELEGATE to managers; "
+                "'vp_should_join_calls' is a short list for the VP to personally "
+                "join. A prioritized worklist, not an attainment forecast."
+            ).format(len(surfaced), len(candidates)),
         }
     except Exception as exc:  # noqa: BLE001
         return {"error": str(exc)}

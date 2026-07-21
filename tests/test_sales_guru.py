@@ -107,45 +107,13 @@ def test_deterministic_actions_from_top_actions() -> None:
     assert "Pull it forward and close" in out["headline"]  # leads with #1
     a = out["actions"][0]
     assert a["action"] == "Pull it forward and close"
-    # Deals are named by company + MRR (+ stage), not deal_id.
-    assert a["top_deals"] == ["Acme ($8,000/mo) — Negotiation", "Globex ($4,500/mo) — Proposal"]
-    assert a["more"] is None  # only 2 deals, nothing to summarize
+    # Every deal is listed by company + MRR (+ stage), not deal_id -- no tail.
+    assert a["deals"] == ["Acme ($8,000/mo) — Negotiation", "Globex ($4,500/mo) — Proposal"]
+    assert "more" not in a
     # VP-personal calls carry through, named by company + MRR.
     assert out["calls_to_join"] == [
         {"deal": "Acme ($8,000/mo)", "why": "VP champion engaged — Pull forward"}
     ]
-
-
-def test_deterministic_actions_summarizes_the_tail() -> None:
-    # More than DEALS_SHOWN deals -> a few named, the rest aggregated by MRR.
-    deals = [
-        {
-            "deal_id": f"D-{i}",
-            "label": f"Co{i} (${1000 + i}/mo)",
-            "mrr": 1000 + i,
-            "stage": "Proposal",
-        }
-        for i in range(8)
-    ]
-    plan = {
-        "region": "NA",
-        "actions": [
-            {
-                "priority": 1,
-                "kind": "risk",
-                "title": "Reset the plan",
-                "first_step": "rebuild MAP",
-                "owner": "rep + manager",
-                "deal_count": 8,
-                "mrr_at_stake": 8028,
-                "deals": deals,
-            }
-        ],
-    }
-    a = _deterministic_actions(plan)["actions"][0]
-    assert len(a["top_deals"]) == 5  # DEALS_SHOWN
-    assert a["more"].startswith("plus 3 more")  # 8 - 5
-    assert "/mo)" in a["more"]  # remainder carries a dollar value, not a bare count
 
 
 def test_deterministic_actions_empty_region() -> None:
@@ -252,7 +220,7 @@ class _ActionsClient:
                     _block(
                         type="tool_use",
                         name="region_top_actions",
-                        input={"region": "NA", "top_n": 3},
+                        input={"region": "NA", "max_deals": 10},
                         id="t1",
                     )
                 ]
@@ -271,8 +239,7 @@ class _ActionsClient:
                                 "action": "Pull forward and close",
                                 "why": "empowered champions, simple process",
                                 "owner": "rep",
-                                "top_deals": ["Acme ($8,000/mo)", "Globex ($4,500/mo)"],
-                                "more": "plus 5 more ($20,000/mo)",
+                                "deals": ["Acme ($8,000/mo)", "Globex ($4,500/mo)"],
                             }
                         ],
                         "calls_to_join": [{"deal": "Acme ($8,000/mo)", "why": "VP champion"}],
@@ -293,7 +260,7 @@ def test_run_region_guru_dispatches_and_submits() -> None:
     assert result["region"] == "NA"
     assert result["headline"] == "Close the fast movers first"
     # Deals are named by company + MRR, not deal_id.
-    assert result["actions"][0]["top_deals"][0] == "Acme ($8,000/mo)"
+    assert result["actions"][0]["deals"][0] == "Acme ($8,000/mo)"
     assert result["calls_to_join"][0]["deal"] == "Acme ($8,000/mo)"
     assert not result.get("_fallback")
 
@@ -334,7 +301,7 @@ class _ChatClient:
                     _block(
                         type="tool_use",
                         name="region_top_actions",
-                        input={"region": "NA", "top_n": 3},
+                        input={"region": "NA", "max_deals": 10},
                         id="c1",
                     )
                 ]

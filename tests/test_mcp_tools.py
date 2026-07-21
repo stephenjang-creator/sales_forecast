@@ -106,20 +106,22 @@ def test_recommend_plays_not_found() -> None:
 
 
 def test_region_top_actions_grouped_and_ranked() -> None:
-    plan = srv.region_top_actions("NA", top_n=3)
+    plan = srv.region_top_actions("NA", max_deals=10)
     assert plan["region"] == "NA"
     assert plan["active_deals"] > 0
     actions = plan["actions"]
-    assert 0 < len(actions) <= 3  # capped at top_n
-    # Ranked by priority_score, descending, and priority is 1..N in order.
+    assert actions, "expected at least one action"
+    # Every surfaced deal is listed; the total is bounded by max_deals (no tail).
+    total_deals = sum(a["deal_count"] for a in actions)
+    assert total_deals == plan["surfaced_deals"] <= 10
+    # Actions ranked by priority_score, descending, priority 1..N in order.
     scores = [a["priority_score"] for a in actions]
     assert scores == sorted(scores, reverse=True)
     assert [a["priority"] for a in actions] == list(range(1, len(actions) + 1))
     for a in actions:
         assert a["kind"] in ("risk", "opportunity")
-        assert a["deal_count"] == len(a["deals"])  # one action, many deals
+        assert a["deal_count"] == len(a["deals"])  # one action, many deals, all listed
         assert a["deals"], "an action must cover at least one deal"
-        # arr_at_stake is the sum of the covered deals' ARR.
         assert abs(a["arr_at_stake"] - round(sum(d["arr"] for d in a["deals"]), 0)) < 1.0
         assert {"title", "first_step", "owner", "mrr_at_stake"} <= set(a.keys())
         for deal in a["deals"]:
@@ -129,9 +131,15 @@ def test_region_top_actions_grouped_and_ranked() -> None:
     json.dumps(plan)
 
 
-def test_region_top_actions_default_top_n_is_three() -> None:
-    plan = srv.region_top_actions("NA")
-    assert len(plan["actions"]) <= 3
+def test_region_top_actions_deal_budget_bounds_and_lists_all() -> None:
+    # A small budget surfaces exactly that many deals, each fully listed.
+    plan = srv.region_top_actions("NA", max_deals=5)
+    assert plan["surfaced_deals"] == 5
+    assert sum(a["deal_count"] for a in plan["actions"]) == 5
+    assert plan["actionable_deals"] >= plan["surfaced_deals"]
+    # Raising the budget surfaces more (no hidden tail at the low budget).
+    bigger = srv.region_top_actions("NA", max_deals=15)
+    assert bigger["surfaced_deals"] > 5
 
 
 def test_region_top_actions_vp_call_shortlist_is_capped_and_senior() -> None:
