@@ -34,6 +34,48 @@ drawer with the flagging reason and recommended step. Deploy it anywhere with
 Docker (see [`DEPLOY.md`](DEPLOY.md)); set `ANTHROPIC_API_KEY` for LLM-backed
 agent answers, or run it fully offline.*
 
+## Who it's for — value by role
+
+Three executives look at the same forecast and ask different questions.
+Intelligent Forecast answers all three from **one auditable source of truth** —
+a 600-deal pipeline scored by deterministic rules, not a black-box model.
+
+### 💵 CFO — "Can I trust the number I'm about to commit to the board?"
+
+- **Sees:** how much of the Commit + Best-Case forecast is actually shaky (the
+  *money-at-risk* KPI — e.g. `$1.2M at risk across 25 deals`), and a **Model
+  health** tab showing the detector's own precision / recall / F1 against
+  labeled ground truth.
+- **Value:** a **defensible, auditable forecast**. Every flag is a rule a human
+  can verify against the CRM — so guidance, cash planning, and quota-setting rest
+  on evidence, not optimism. The tool even reports where it's *less* certain.
+
+### 📈 CRO — "Where do I point the team to hit the number?"
+
+- **Sees:** the riskiest deals **ranked by exposure and grouped by region**, a
+  **Fast Mover** upside alert, and an *Ask anything* bar that triages ("chase
+  these first"), explains why exposure is concentrated, and drafts a **deal
+  rescue plan** — routed automatically to the right one of four agents.
+- **Value:** turns a 600-deal pipeline into a **short, prioritized action list**.
+  Protects committed revenue, catches slipping Commits early, and surfaces the
+  one upside deal worth a personal nudge this week.
+
+### ⚙️ RevOps VP — "Is the pipeline healthy, and who owns the fix?"
+
+- **Sees:** MEDDPICC + hygiene flags with the **exact reason and recommended
+  play** per deal, non-anomaly **signals** (fast movers, stalled cadence,
+  meetings too far out), and a **region worklist** that names each deal's
+  opportunity owner and the **manager to delegate to** — plus a region-aware
+  **bookings projection** for the forecast call.
+- **Value:** enforces forecast discipline **at scale**. The top actions per
+  region get routed to the right managers; the VP joins only the few
+  senior-stakeholder calls that move the number.
+
+Underneath, the same deterministic engine powers all three — the
+[eval scorecard](#eval-scorecard) shows exactly how accurate it is
+(**F1 0.835 → 0.954** region-aware), and every flag traces back to one auditable
+rule.
+
 ## Eval scorecard
 
 The bundled dataset (`data/pipeline.csv`, 600 deals, seed 28) models a real B2B
