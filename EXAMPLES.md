@@ -6,9 +6,11 @@ narrates. The deterministic rules own every flag — the agent never re-decides
 risk, it only explains and routes.
 
 All numbers below are from the bundled synthetic dataset (`data/pipeline.csv`,
-seed 42); yours will differ if you point `FORECAST_CSV` at your own export.
+seed 28); yours will differ if you point `FORECAST_CSV` at your own export.
 
 ---
+
+## Risk questions (flags, exposure, reliability)
 
 ### 1. Regional roll-up
 > **"How is EMEA looking this month?"**
@@ -63,9 +65,10 @@ seed 42); yours will differ if you point `FORECAST_CSV` at your own export.
 - **Returns:** overall precision / recall / F1 + per-rule precision and recall
   against ground truth.
 - **Narration tip:** Be honest about the trade-offs, e.g. "`premature_deep_discount`
-  runs ~0.46 precision — it deliberately over-flags early deep discounts, so treat
-  those as 'worth a look,' not certain problems," and "`stalled_in_stage` recall is
-  ~0.60 by design, so I may miss borderline stalls."
+  runs ~0.30 precision region-agnostic (0.60 region-aware) — it deliberately
+  over-flags early deep discounts, so treat those as 'worth a look,' not certain
+  problems," and "`stalled_in_stage` recall is ~0.68 region-agnostic (1.00
+  region-aware), so in the naive mode I may miss borderline stalls."
 
 ### 7. Discovering valid filters
 > **"Which regions do we even have data for?"**
@@ -94,7 +97,7 @@ seed 42); yours will differ if you point `FORECAST_CSV` at your own export.
 - **Returns:** `won_so_far` + `expected_to_close` = `projected_bookings`, plus
   `quota` and `projected_attainment_pct`, with prior-period and year-ago actuals.
 - **Narration tip:** The period is in progress — quote projected vs quota as
-  *pace* and cite the `note`. "EMEA is pacing to ~$3.1M this quarter (43% of
+  *pace* and cite the `note`. "EMEA is pacing to ~$1.6M this quarter (51% of
   quota) with the quarter still open."
 
 ### 10. Month vs quarter
@@ -110,8 +113,8 @@ seed 42); yours will differ if you point `FORECAST_CSV` at your own export.
 - **Call:** `period_comparison(grain="quarter", region="NA")`
 - **Returns:** latest *completed* period's bookings + attainment, the prior
   quarter (QoQ), and the same quarter a year ago (YoY), with percent changes.
-- **Narration tip:** Use this for settled trends (e.g. "NA finished Q2 +15% YoY,
-  +7% QoQ at 99% attainment") — not the in-progress period, which understates.
+- **Narration tip:** Use this for settled trends (e.g. "NA finished Q2 +24% YoY,
+  +22% QoQ at 105% attainment") — not the in-progress period, which understates.
 
 ### 12. Historical trend
 > **"Show me EMEA bookings by quarter for the last two years."**

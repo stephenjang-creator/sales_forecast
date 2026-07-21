@@ -5,9 +5,6 @@ retune the detector without touching rule logic. Rules import these constants;
 they never hard-code values of their own.
 """
 
-# MEDDPICC rollup bounds (8 elements scored 0-3 each).
-MEDDPICC_MAX = 24
-
 # A deal a rep has forecast as "Commit" should have real qualification behind
 # it. Commit deals whose confidence proxy falls below this floor are suspect.
 COMMIT_CONFIDENCE_FLOOR = 60  # 0-100 scale

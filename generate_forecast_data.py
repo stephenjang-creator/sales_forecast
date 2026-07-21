@@ -186,9 +186,6 @@ def _region_discount(region, stage):
 MEDDPICC = ["metrics", "economic_buyer", "decision_criteria", "decision_process",
             "paper_process", "identified_pain", "champion", "competition"]
 
-# Forecast categories a rep/AE would set
-FORECAST_CATEGORY = ["Omitted", "Pipeline", "Best Case", "Commit"]
-
 
 # ----------------------------------------------------------------------
 # MEDDPICC scoring

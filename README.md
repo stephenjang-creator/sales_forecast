@@ -96,7 +96,7 @@ change in `detector/rules.py` plus one line in the `ALL_RULES` registry.
 | Rule (`rule_id`) | MEDDPICC / hygiene signal | Fires when | Severity |
 | --- | --- | --- | --- |
 | `slipped_close_date` | Deal hygiene (forecast discipline) | `close_date_pushes ≥ 2` | medium → high (3+) |
-| `stalled_in_stage` | Decision **P**rocess velocity | open & `days_in_stage > normal × 3` | medium → high (>4×) |
+| `stalled_in_stage` | Decision **P**rocess velocity | open & `days_in_stage > normal × 2.5` | medium → high (>4×) |
 | `commit_low_meddpicc` | Overall MEDDPICC confidence | `forecast = Commit` & `confidence < 60` | high |
 | `late_stage_no_economic_buyer` | **E**conomic Buyer | Proposal/Negotiation & `m_economic_buyer = 0` | high |
 | `premature_deep_discount` | **M**etrics / Identified **P**ain (value unproven) | early stage & `discount ≥ 30%` | medium |
@@ -400,9 +400,9 @@ flag; the plays *respond* to the flags the rules already set.
 
 ```bash
 export ANTHROPIC_API_KEY=sk-...
-make guru                                    # every region's top-3 actions
+make guru                                    # every region's prioritized actions
 python -m agents.sales_guru --deal D-10023   # coach one deal
-python -m agents.sales_guru --region NA      # one region's top 3 (‑‑top-n to change)
+python -m agents.sales_guru --region NA      # one region's worklist (--max-deals to change)
 python -m agents.sales_guru --chat --region NA   # ask, then keep prompting
 python -m agents.sales_guru --all --json     # machine-readable
 
