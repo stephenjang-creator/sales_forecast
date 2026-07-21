@@ -68,13 +68,17 @@ make data       # python generate_forecast_data.py --n 600 --seed 28 --out data/
 # 3. Run the deterministic-core unit tests
 make test       # pytest -q
 
-# 4. Print the eval scorecard against the bundled labeled CSV
+# 4. One-command offline walkthrough (no API key): scorecard -> deal coaching ->
+#    VP worklist -> signals -> region forecast, all deterministic
+make demo       # python demo.py  (Windows: python demo.py)
+
+# 5. Print the eval scorecard against the bundled labeled CSV
 make eval       # python -m detector.evaluate data/pipeline.csv
 
-# 5. Launch the two-mode Streamlit UI
+# 6. Launch the two-mode Streamlit UI
 make app        # streamlit run app.py
 
-# 6. Run the MCP server so an agent can query the pipeline (see "Agent / MCP")
+# 7. Run the MCP server so an agent can query the pipeline (see "Agent / MCP")
 make mcp        # python mcp_server.py
 ```
 
@@ -135,6 +139,7 @@ sales_forecast/
 │   └── test_sales_guru.py      # guru fallbacks + deal/region agent loops
 ├── app.py                      # Streamlit two-mode UI
 ├── mcp_server.py               # FastMCP server exposing the detector to agents
+├── demo.py                     # one-command offline walkthrough (make demo)
 ├── EXAMPLES.md                 # agent questions → tool calls
 └── Makefile
 ```

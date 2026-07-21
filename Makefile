@@ -1,4 +1,4 @@
-.PHONY: data history test eval eval-region app mcp attainment attainment-dry guru guru-dry guru-chat
+.PHONY: data history test eval eval-region app mcp attainment attainment-dry guru guru-dry guru-chat demo
 
 # Regenerate the bundled datasets (already committed; only needed to reseed).
 data: history
@@ -52,3 +52,8 @@ guru-dry:
 # Pass REGION=NA to seed the first question.
 guru-chat:
 	python -m agents.sales_guru --chat $(if $(REGION),--region $(REGION),)
+
+# One-command offline walkthrough: scorecard -> deal coaching -> VP worklist ->
+# signals -> region forecast, all deterministic (no key). Windows: python demo.py
+demo:
+	python demo.py
