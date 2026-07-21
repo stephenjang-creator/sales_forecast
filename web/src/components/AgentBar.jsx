@@ -58,6 +58,7 @@ export default function AgentBar({ query, setQuery, result, loading, onAsk, onCl
           disabled={loading}
           style={{
             height: 32,
+            minWidth: 78,
             padding: "0 16px",
             borderRadius: 8,
             border: "none",
@@ -66,12 +67,33 @@ export default function AgentBar({ query, setQuery, result, loading, onAsk, onCl
             fontSize: 13,
             fontWeight: 600,
             cursor: loading ? "default" : "pointer",
-            opacity: loading ? 0.7 : 1,
+            opacity: loading ? 0.85 : 1,
             fontFamily: "inherit",
             flexShrink: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 7,
           }}
         >
-          {loading ? "…" : "Ask"}
+          {loading ? (
+            <>
+              <span
+                aria-hidden="true"
+                style={{
+                  width: 13,
+                  height: 13,
+                  borderRadius: "50%",
+                  border: "2px solid rgba(255,255,255,0.4)",
+                  borderTopColor: "#fff",
+                  animation: "spin 0.6s linear infinite",
+                }}
+              />
+              Thinking
+            </>
+          ) : (
+            "Ask"
+          )}
         </button>
       </div>
 
