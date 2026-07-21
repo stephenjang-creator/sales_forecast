@@ -189,6 +189,11 @@ attainment), `pipeline_by_period` (bookings distribution across periods),
 See [`EXAMPLES.md`](EXAMPLES.md) for natural-language questions and the tool call
 each should trigger.
 
+Every scoring tool also accepts **`region_aware=True`** to apply the per-region
+threshold overlay (see [Region-aware thresholds](#region-aware-thresholds-opt-in)),
+and the attainment agents take a matching `--region-aware` flag. The server
+pre-scores both modes at startup, so the flag is a free per-call switch.
+
 **Register with Claude Code** (one-liner, run from this directory):
 
 ```bash

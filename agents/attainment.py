@@ -104,9 +104,11 @@ def _fmt_usd(x: float) -> str:
 # --------------------------------------------------------------------------- #
 # Agent loop (Anthropic tool-use over the MCP tools).
 # --------------------------------------------------------------------------- #
-async def _run_region_agent(client, session, region: str, model: str) -> dict:
+async def _run_region_agent(
+    client, session, region: str, model: str, region_aware: bool = False
+) -> dict:
     """Drive one region's agent to a submit_prediction call; return its dict."""
-    ctx = await gather_region_context(session, region)
+    ctx = await gather_region_context(session, region, region_aware)
     baseline = baseline_from_deals(ctx["deals"])
     tools = await anthropic_tool_schema(session)
     tools.append(_SUBMIT_TOOL)
@@ -183,13 +185,15 @@ def _period_summary(rollup: dict) -> dict:
     }
 
 
-async def predict_region(region: str, model: str, csv_path: str | None) -> dict:
+async def predict_region(
+    region: str, model: str, csv_path: str | None, region_aware: bool = False
+) -> dict:
     """Run a single region's agent end to end over its own MCP session."""
     from anthropic import AsyncAnthropic  # lazy: only needed for the agent path
 
     client = AsyncAnthropic()
     async with open_session(csv_path) as session:
-        return await _run_region_agent(client, session, region, model)
+        return await _run_region_agent(client, session, region, model, region_aware)
 
 
 # --------------------------------------------------------------------------- #
@@ -221,7 +225,9 @@ async def _discover_regions(csv_path: str | None) -> list[str]:
     return list(regions)
 
 
-async def predict_all(regions: list[str], model: str, csv_path: str | None) -> dict:
+async def predict_all(
+    regions: list[str], model: str, csv_path: str | None, region_aware: bool = False
+) -> dict:
     """Fan out one agent per region concurrently, then aggregate."""
     from anthropic import AsyncAnthropic  # lazy
 
@@ -229,7 +235,7 @@ async def predict_all(regions: list[str], model: str, csv_path: str | None) -> d
 
     async def _one(region: str) -> dict:
         async with open_session(csv_path) as session:
-            return await _run_region_agent(client, session, region, model)
+            return await _run_region_agent(client, session, region, model, region_aware)
 
     predictions = await asyncio.gather(*(_one(r) for r in regions))
     predictions = list(predictions)
@@ -239,16 +245,20 @@ async def predict_all(regions: list[str], model: str, csv_path: str | None) -> d
 # --------------------------------------------------------------------------- #
 # Offline dry run: prove the stdio + tools + baseline flow with no key.
 # --------------------------------------------------------------------------- #
-async def dry_run(regions: list[str], csv_path: str | None) -> dict:
+async def dry_run(regions: list[str], csv_path: str | None, region_aware: bool = False) -> dict:
     """Compute each region's month + quarter rollup and YoY via the tools only."""
     out = []
     async with open_session(csv_path) as session:
         for region in regions:
             month = await call_tool(
-                session, "bookings_rollup", {"grain": "month", "region": region}
+                session,
+                "bookings_rollup",
+                {"grain": "month", "region": region, "region_aware": region_aware},
             )
             quarter = await call_tool(
-                session, "bookings_rollup", {"grain": "quarter", "region": region}
+                session,
+                "bookings_rollup",
+                {"grain": "quarter", "region": region, "region_aware": region_aware},
             )
             comp = await call_tool(
                 session, "period_comparison", {"grain": "quarter", "region": region}
@@ -322,13 +332,14 @@ async def _amain(args: argparse.Namespace) -> int:
     else:
         regions = await _discover_regions(csv_path)
 
+    ra = args.region_aware
     if args.dry_run:
-        result = await dry_run(regions, csv_path)
+        result = await dry_run(regions, csv_path, ra)
     elif args.region:
-        pred = await predict_region(args.region, args.model, csv_path)
+        pred = await predict_region(args.region, args.model, csv_path, ra)
         result = {"regions": [pred], "portfolio": _aggregate([pred])}
     else:
-        result = await predict_all(regions, args.model, csv_path)
+        result = await predict_all(regions, args.model, csv_path, ra)
 
     if args.json:
         print(json.dumps(result, indent=2))
@@ -345,6 +356,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--model", default=DEFAULT_MODEL, help="Anthropic model id")
     parser.add_argument("--csv", default=None, help="pipeline CSV (else FORECAST_CSV/default)")
     parser.add_argument("--dry-run", action="store_true", help="baseline only, no LLM/key")
+    parser.add_argument(
+        "--region-aware",
+        action="store_true",
+        help="score with the per-region threshold overlay (US/EMEA/APAC)",
+    )
     parser.add_argument("--json", action="store_true", help="emit JSON")
     args = parser.parse_args(argv)
 

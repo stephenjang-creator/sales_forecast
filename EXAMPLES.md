@@ -125,3 +125,15 @@ seed 42); yours will differ if you point `FORECAST_CSV` at your own export.
 - **Run:** `python -m agents.attainment --all` (one agent per region over the
   tools above, then a portfolio roll-up). `--dry-run` gives the deterministic
   rollups with no key.
+
+### 14. Region-aware scoring
+> **"Score the pipeline the way each region actually sells."**
+
+- **How:** every scoring tool takes `region_aware=True` (e.g.
+  `assess_region("APAC", region_aware=True)`, `list_deals(region_aware=True)`,
+  `get_scorecard(region_aware=True)`), and the agent CLI takes `--region-aware`.
+- **Effect:** US flags stalls sooner, EMEA proposals get more slack, APAC's early
+  deep discounts stop being flagged. Off by default (region-agnostic baseline).
+- **Narration tip:** it changes what's flagged, so `get_scorecard(region_aware=True)`
+  shifts vs the baseline — precision up, recall down where a region tolerates the
+  behavior. Say which mode you used.

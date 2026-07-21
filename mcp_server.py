@@ -59,7 +59,8 @@ _RISK_EXPOSURE_NOTE = (
 # In-memory state: load + score the pipeline once, reuse for every tool.
 # --------------------------------------------------------------------------- #
 class _State:
-    df: pd.DataFrame | None = None
+    df: pd.DataFrame | None = None  # region-agnostic scoring (default)
+    df_region: pd.DataFrame | None = None  # region-aware scoring (overlay)
     csv_path: Path = _DEFAULT_CSV
     hist: pd.DataFrame | None = None
     targets: pd.DataFrame | None = None
@@ -82,21 +83,28 @@ def _targets_path() -> Path:
 
 
 def reload() -> None:
-    """(Re)load the pipeline (and history/targets, if present) into memory."""
+    """(Re)load the pipeline (and history/targets, if present) into memory.
+
+    Scores the pipeline twice -- region-agnostic (default) and with the
+    region-aware overlay -- so tools can serve either without re-scoring.
+    """
     path = _csv_path()
     _state.csv_path = path
-    _state.df = run(load(path))
+    df = load(path)
+    _state.df = run(df)
+    _state.df_region = run(df, region_aware=True)
     hp, tp = _history_path(), _targets_path()
     _state.hist = periods.load_history(hp) if hp.exists() else None
     _state.targets = periods.load_targets(tp) if tp.exists() else None
 
 
-def _df() -> pd.DataFrame:
-    """Return the scored pipeline, loading it on first use."""
+def _df(region_aware: bool = False) -> pd.DataFrame:
+    """Return the scored pipeline (region-aware overlay when requested)."""
     if _state.df is None:
         reload()
-    assert _state.df is not None
-    return _state.df
+    frame = _state.df_region if region_aware else _state.df
+    assert frame is not None
+    return frame
 
 
 _NO_HISTORY = {"error": "No history data loaded; run `make history` (data/history.csv)."}
@@ -189,16 +197,20 @@ def list_deals(
     rep: str | None = None,
     flagged_only: bool = False,
     limit: int = 25,
+    region_aware: bool = False,
 ) -> list[dict] | dict:
     """List pipeline deals, optionally filtered, highest risk first.
 
     Use to browse or narrow the pipeline before drilling in. Any filter left as
-    None is ignored. Set flagged_only=True to see only at-risk deals. Returns up
-    to `limit` compact deal summaries (deal_id, account, region, segment, stage,
-    forecast_category, arr, risk_score, predicted_anomaly, top_reason).
+    None is ignored. Set flagged_only=True to see only at-risk deals. Set
+    region_aware=True to score with the per-region threshold overlay (US flags
+    stalls sooner, EMEA proposals get slack, APAC tolerates early discounts).
+    Returns up to `limit` compact deal summaries (deal_id, account, region,
+    segment, stage, forecast_category, arr, risk_score, predicted_anomaly,
+    top_reason).
     """
     try:
-        df = _df()
+        df = _df(region_aware)
         if region is not None and not _has_region():
             return {"error": "No 'region' column in this dataset; run `make data`."}
         mask = pd.Series(True, index=df.index)
@@ -219,15 +231,16 @@ def list_deals(
 
 
 @mcp.tool()
-def assess_deal(deal_id: str) -> dict:
+def assess_deal(deal_id: str, region_aware: bool = False) -> dict:
     """Full risk picture for one deal by its deal_id (e.g. "D-10023").
 
     Returns identity, ARR, stage, forecast_category, meddpicc_confidence, the 8
     MEDDPICC element scores, the list of rule `hits` (rule_id, severity, reason),
-    risk_score, and predicted_anomaly. Returns {"error": ...} if not found.
+    risk_score, and predicted_anomaly. Set region_aware=True to apply the
+    per-region threshold overlay. Returns {"error": ...} if not found.
     """
     try:
-        df = _df()
+        df = _df(region_aware)
         matches = df[df["deal_id"] == deal_id]
         if matches.empty:
             return {"error": f"deal_id {deal_id!r} not found"}
@@ -251,16 +264,17 @@ def assess_deal(deal_id: str) -> dict:
 
 
 @mcp.tool()
-def assess_segment(segment: str) -> dict:
+def assess_segment(segment: str, region_aware: bool = False) -> dict:
     """Risk-exposure roll-up for a segment (Enterprise / Mid-Market / SMB).
 
     Returns deals, flagged, total_arr, at_risk_arr, commit_arr,
     at_risk_pct_of_commit (share of Commit ARR that is flagged), top_reasons
-    (top 3 anomaly types by count), and avg_meddpicc_confidence. This is risk
+    (top 3 anomaly types by count), and avg_meddpicc_confidence. Set
+    region_aware=True to apply the per-region threshold overlay. This is risk
     exposure, not a predicted attainment/bookings number.
     """
     try:
-        df = _df()
+        df = _df(region_aware)
         sub = df[df["segment"] == segment]
         if sub.empty:
             return {"error": f"no deals in segment {segment!r}"}
@@ -270,17 +284,18 @@ def assess_segment(segment: str) -> dict:
 
 
 @mcp.tool()
-def assess_region(region: str) -> dict:
+def assess_region(region: str, region_aware: bool = False) -> dict:
     """Risk-exposure roll-up for a region (NA / EMEA / APAC / LATAM).
 
     Same shape as assess_segment: deals, flagged, ARR totals, at_risk_pct_of_commit,
-    top_reasons, avg_meddpicc_confidence. Reports risk exposure, not a predicted
+    top_reasons, avg_meddpicc_confidence. Set region_aware=True to score with the
+    per-region threshold overlay. Reports risk exposure, not a predicted
     attainment number. Returns {"error": ...} if the dataset has no region column.
     """
     try:
         if not _has_region():
             return {"error": "No 'region' column in this dataset; run `make data`."}
-        df = _df()
+        df = _df(region_aware)
         sub = df[df["region"] == region]
         if sub.empty:
             return {"error": f"no deals in region {region!r}"}
@@ -290,16 +305,17 @@ def assess_region(region: str) -> dict:
 
 
 @mcp.tool()
-def forecast_summary(forecast_category: str | None = None) -> dict:
+def forecast_summary(forecast_category: str | None = None, region_aware: bool = False) -> dict:
     """How much forecast exposure is actually shaky, across the pipeline.
 
     Optionally filter to one forecast_category (Commit / Best Case / Pipeline /
     Omitted). Returns total_arr and flagged_arr for the slice plus the count and
     ARR of the two most forecast-damaging anomalies -- commit_low_meddpicc and
     imminent_close_no_paper_process -- so an agent can quantify at-risk Commit.
+    Set region_aware=True to apply the per-region threshold overlay.
     """
     try:
-        df = _df()
+        df = _df(region_aware)
         sub = df if forecast_category is None else df[df["forecast_category"] == forecast_category]
         flagged_mask = sub["predicted_anomaly"]
         return {
@@ -316,15 +332,17 @@ def forecast_summary(forecast_category: str | None = None) -> dict:
 
 
 @mcp.tool()
-def get_scorecard() -> dict:
+def get_scorecard(region_aware: bool = False) -> dict:
     """The detector's own accuracy vs. ground-truth labels, for self-caveating.
 
     Use when asked "how confident/reliable are you?". Returns overall precision,
     recall, F1 and confusion counts, plus per-rule precision and recall. Note
     that some rules trade precision for recall by design (see the reason text).
+    region_aware=True scores with the per-region overlay (the labels are
+    region-agnostic, so region-aware precision rises and recall dips slightly).
     """
     try:
-        df = _df()
+        df = _df(region_aware)
         om = overall_metrics(df)
         rules = per_rule_metrics(df)
         return {
@@ -378,7 +396,9 @@ def list_segments() -> list[str] | dict:
 # Time-period tools: current-period rollups + historical comparisons.
 # --------------------------------------------------------------------------- #
 @mcp.tool()
-def bookings_rollup(grain: str = "quarter", region: str | None = None) -> dict:
+def bookings_rollup(
+    grain: str = "quarter", region: str | None = None, region_aware: bool = False
+) -> dict:
     """Projected bookings for the CURRENT in-progress month or quarter.
 
     grain is "month" or "quarter". Returns won-so-far this period + risk-adjusted
@@ -386,6 +406,8 @@ def bookings_rollup(grain: str = "quarter", region: str | None = None) -> dict:
     plus quota and projected_attainment_pct, and prior-period / year-ago actuals
     for context. This is the answer to "how much will <region> book this
     month/quarter?". Note: the period is in progress, so read attainment as pace.
+    region_aware=True applies the per-region threshold overlay to the risk
+    adjustment.
     """
     try:
         if grain not in ("month", "quarter"):
@@ -393,20 +415,23 @@ def bookings_rollup(grain: str = "quarter", region: str | None = None) -> dict:
         if region is not None and not _has_region():
             return {"error": "No 'region' column in this dataset; run `make data`."}
         return periods.bookings_rollup(
-            _df(), grain, region, targets=_state.targets, hist=_state.hist
+            _df(region_aware), grain, region, targets=_state.targets, hist=_state.hist
         )
     except Exception as exc:  # noqa: BLE001
         return {"error": str(exc)}
 
 
 @mcp.tool()
-def pipeline_by_period(grain: str = "quarter", region: str | None = None) -> dict:
+def pipeline_by_period(
+    grain: str = "quarter", region: str | None = None, region_aware: bool = False
+) -> dict:
     """Break the pipeline into calendar periods by each deal's close_date.
 
     grain is "month" or "quarter". Each period returns won ARR, open ARR,
     stage-weighted open ARR, risk-adjusted open ARR, flagged open ARR and
     open-deal count, with the current period flagged. Use to see how bookings are
-    distributed across upcoming periods, not just the current one.
+    distributed across upcoming periods, not just the current one. region_aware=True
+    applies the per-region threshold overlay.
     """
     try:
         if grain not in ("month", "quarter"):
@@ -416,7 +441,7 @@ def pipeline_by_period(grain: str = "quarter", region: str | None = None) -> dic
         return {
             "grain": grain,
             "region": region or "ALL",
-            "periods": periods.pipeline_by_period(_df(), grain, region),
+            "periods": periods.pipeline_by_period(_df(region_aware), grain, region),
         }
     except Exception as exc:  # noqa: BLE001
         return {"error": str(exc)}

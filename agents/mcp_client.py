@@ -81,18 +81,27 @@ async def anthropic_tool_schema(session: ClientSession) -> list[dict]:
     return schema
 
 
-async def gather_region_context(session: ClientSession, region: str) -> dict:
-    """Collect everything an attainment agent needs for one region, via tools."""
-    rollup = await call_tool(session, "assess_region", {"region": region})
-    deals = await call_tool(session, "list_deals", {"region": region, "limit": 1000})
+async def gather_region_context(
+    session: ClientSession, region: str, region_aware: bool = False
+) -> dict:
+    """Collect everything an attainment agent needs for one region, via tools.
+
+    ``region_aware`` opts the scoring-dependent tools into the per-region
+    threshold overlay.
+    """
+    ra = {"region_aware": region_aware}
+    rollup = await call_tool(session, "assess_region", {"region": region, **ra})
+    deals = await call_tool(session, "list_deals", {"region": region, "limit": 1000, **ra})
     flagged = await call_tool(
         session,
         "list_deals",
-        {"region": region, "flagged_only": True, "limit": 1000},
+        {"region": region, "flagged_only": True, "limit": 1000, **ra},
     )
-    month_rollup = await call_tool(session, "bookings_rollup", {"grain": "month", "region": region})
+    month_rollup = await call_tool(
+        session, "bookings_rollup", {"grain": "month", "region": region, **ra}
+    )
     quarter_rollup = await call_tool(
-        session, "bookings_rollup", {"grain": "quarter", "region": region}
+        session, "bookings_rollup", {"grain": "quarter", "region": region, **ra}
     )
     quarter_history = await call_tool(
         session, "period_comparison", {"grain": "quarter", "region": region}

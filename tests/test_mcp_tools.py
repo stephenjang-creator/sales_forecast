@@ -171,6 +171,21 @@ def test_bookings_rollup_bad_grain() -> None:
     assert "error" in srv.bookings_rollup("week", "EMEA")
 
 
+def test_region_aware_param_changes_scoring() -> None:
+    # Default (agnostic) vs region-aware overlay produce different scorecards.
+    assert srv.get_scorecard()["overall"] != srv.get_scorecard(region_aware=True)["overall"]
+    # APAC tolerates early discounts -> region-aware flags <= agnostic there.
+    a0 = srv.assess_region("APAC")
+    a1 = srv.assess_region("APAC", region_aware=True)
+    assert a1["flagged"] <= a0["flagged"]
+    json.dumps(srv.list_deals(region="EMEA", flagged_only=True, region_aware=True))
+
+
+def test_region_aware_defaults_match_baseline() -> None:
+    # Omitting the flag must equal region_aware=False (baseline preserved).
+    assert srv.get_scorecard() == srv.get_scorecard(region_aware=False)
+
+
 def test_bookings_rollup_na_region_has_quota_and_yoy() -> None:
     # Regression: "NA" in history/targets must survive pandas' NaN parsing.
     result = srv.bookings_rollup("quarter", "NA")
