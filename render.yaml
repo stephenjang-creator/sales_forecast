@@ -1,0 +1,19 @@
+# Render Blueprint: one-click, reproducible deploy of Intelligent Forecast.
+# In Render: New -> Blueprint -> pick this repo. Render reads this file, builds
+# the Dockerfile, wires the health check, and provisions the env vars below.
+# Docs: https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: intelligent-forecast
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    # Render injects PORT; the container's CMD binds to it. Liveness is the API
+    # health endpoint, so a boot with no SPA still reports honestly.
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      # Optional: set in the Render dashboard to enable LLM-backed agent answers.
+      # Without it the app is fully functional (deterministic answers).
+      - key: ANTHROPIC_API_KEY
+        sync: false

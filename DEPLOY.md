@@ -29,9 +29,11 @@ Omit `-e ANTHROPIC_API_KEY` to run fully offline (deterministic agent answers).
 
 Any Docker host works. Common one-click options:
 
-- **Render** — New → Web Service → "Deploy an existing image" or connect the
-  repo (it auto-detects the `Dockerfile`). Set `ANTHROPIC_API_KEY` under
-  Environment. Render injects `PORT`.
+- **Render (one click)** — New → **Blueprint** → pick this repo. Render reads
+  the bundled [`render.yaml`](render.yaml): builds the `Dockerfile`, wires the
+  `/api/health` check, and prompts for `ANTHROPIC_API_KEY` (optional). It injects
+  `PORT`. Or do it manually: New → Web Service → connect the repo (it auto-detects
+  the `Dockerfile`) and set `ANTHROPIC_API_KEY` under Environment.
 - **Railway** — New Project → Deploy from repo. It builds the `Dockerfile` and
   injects `PORT`. Add `ANTHROPIC_API_KEY` under Variables.
 - **Fly.io** — `fly launch` (detects the Dockerfile), then
