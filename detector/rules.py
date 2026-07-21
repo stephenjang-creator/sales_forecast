@@ -86,6 +86,25 @@ def _two_weakest_meddpicc(row: dict) -> str:
     return ", ".join(f"{label} ({score})" for label, score in scored[:2])
 
 
+def _region_aware(row: dict) -> bool:
+    """Whether the caller opted into region-specific thresholds for this row.
+
+    The engine injects ``_region_aware`` into the row dict, so a rule stays a
+    pure function of its input. Absent/false => the region-agnostic defaults.
+    """
+    return bool(row.get("_region_aware", False))
+
+
+def _stale_multiplier(row: dict) -> float:
+    """Effective staleness multiplier for a row (region-aware if enabled)."""
+    if not _region_aware(row):
+        return config.STALE_MULTIPLIER
+    region, stage = _str(row, "region"), _str(row, "stage")
+    if (region, stage) in config.REGION_STAGE_STALE_MULTIPLIER:
+        return config.REGION_STAGE_STALE_MULTIPLIER[(region, stage)]
+    return config.REGION_STALE_MULTIPLIER.get(region, config.STALE_MULTIPLIER)
+
+
 # --------------------------------------------------------------------------- #
 # Rules -- one pure function per anomaly type.
 # --------------------------------------------------------------------------- #
@@ -109,12 +128,14 @@ def rule_stalled_in_stage(row: dict) -> RuleHit | None:
         return None
     normal = config.STAGE_NORMAL_DAYS[stage]
     days = _int(row, "days_in_stage")
-    if days <= normal * config.STALE_MULTIPLIER:
+    mult = _stale_multiplier(row)
+    if days <= normal * mult:
         return None
     severity = "high" if days > normal * 4 else "medium"
+    region_note = f" ({_str(row, 'region')} threshold {mult:g}×)" if _region_aware(row) else ""
     reason = (
         f"Stuck in {stage} for {days} days -- {days / normal:.1f}× the "
-        f"{normal}-day norm for this stage."
+        f"{normal}-day norm for this stage{region_note}."
     )
     return RuleHit("stalled_in_stage", severity, reason)
 
@@ -153,6 +174,8 @@ def rule_premature_deep_discount(row: dict) -> RuleHit | None:
     stage = _str(row, "stage")
     if stage not in config.EARLY_STAGES:
         return None
+    if _region_aware(row) and _str(row, "region") in config.REGION_DISCOUNT_TOLERANT:
+        return None  # early deep discounts are normal practice in this region
     discount = _float(row, "discount_pct")
     if discount < config.DEEP_DISCOUNT_PCT:
         return None

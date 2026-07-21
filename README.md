@@ -145,11 +145,32 @@ sales_forecast/
 
 - **Demo (portfolio):** scores the bundled labeled CSV, shows the eval scorecard
   up top (so a reviewer immediately sees it works against ground truth), then a
-  sortable/filterable table of flagged deals with a per-deal detail expander.
+  sortable/filterable table of flagged deals (filter by **region**, segment,
+  stage, and min risk) with a per-deal detail expander.
 - **Bring your own CSV:** runs the identical pipeline on an uploaded file (same
   schema; labels optional — the scorecard hides itself when labels are absent).
 
 LLM briefs sit behind a per-deal toggle, so the app is fully usable without a key.
+
+### Region-aware thresholds (opt-in)
+
+Regions run their sales motion differently, so the sidebar has a **Region-aware
+thresholds** toggle that applies a per-region business overlay (thresholds live
+in `config.py`):
+
+| Region | Behavior | Effect on rules |
+| --- | --- | --- |
+| **NA (US)** | Deals move fast | `stalled_in_stage` fires sooner (2.0× the norm vs 2.5×) |
+| **EMEA** | Deals run long; proposals linger | More slack before "stalled" (3.5× overall, **5.0× in Proposal**) |
+| **APAC** | Early deep discounts are normal | `premature_deep_discount` is suppressed |
+
+It's **off by default** so the headline scorecard stays region-agnostic and
+reproducible. The synthetic labels don't encode regional behavior, so turning it
+on shifts the scorecard slightly — precision up (fewer flags where the region
+tolerates the behavior), recall down where a labeled anomaly is intentionally not
+flagged: **P 0.893 → 0.909, R 0.989 → 0.968, F1 0.939 → 0.937**. Rules stay pure
+functions of a row (the flag is passed in via the row), and
+`engine.run(df, region_aware=True)` exposes the same overlay to code.
 
 ## Agent / MCP
 

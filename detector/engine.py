@@ -40,8 +40,13 @@ def _top_reason(hits: list[RuleHit]) -> str:
     return top.reason
 
 
-def run(df: pd.DataFrame) -> pd.DataFrame:
+def run(df: pd.DataFrame, region_aware: bool = False) -> pd.DataFrame:
     """Score every deal in ``df``.
+
+    ``region_aware`` opts into the per-region threshold overlay in ``config``
+    (US moves faster, EMEA proposals linger, APAC tolerates early discounts). It
+    is off by default so the scorecard stays region-agnostic; the flag is passed
+    to each rule via the row dict, keeping rules pure functions of their input.
 
     Appends four columns and returns a copy (flagged and unflagged rows alike):
         hits: list[RuleHit] fired for the deal (possibly empty).
@@ -50,7 +55,11 @@ def run(df: pd.DataFrame) -> pd.DataFrame:
         top_reason: str, the highest-severity hit's reason ('' if none).
     """
     out = df.copy()
-    all_hits = [evaluate_row(row) for row in out.to_dict("records")]
+    rows = out.to_dict("records")
+    if region_aware:
+        for row in rows:
+            row["_region_aware"] = True
+    all_hits = [evaluate_row(row) for row in rows]
     out["hits"] = all_hits
     out["risk_score"] = [_risk_score(hits) for hits in all_hits]
     out["predicted_anomaly"] = [len(hits) > 0 for hits in all_hits]
@@ -72,6 +81,6 @@ def load(source: str | Path) -> pd.DataFrame:
     return df
 
 
-def run_path(path: str | Path) -> pd.DataFrame:
+def run_path(path: str | Path, region_aware: bool = False) -> pd.DataFrame:
     """Convenience: load a CSV and score it in one call."""
-    return run(load(path))
+    return run(load(path), region_aware=region_aware)

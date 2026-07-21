@@ -201,6 +201,53 @@ def test_imminent_close_ignores_closed() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# Region-aware thresholds (opt-in overlay; default off = unchanged)
+# --------------------------------------------------------------------------- #
+def test_stalled_region_aware_na_flags_sooner() -> None:
+    # Discovery norm 21. 50 days: 2.38x -> clean under default 2.5x, but NA's
+    # 2.0x threshold (42) fires. Region-aware must be explicitly on.
+    base = base_row(stage="Discovery", days_in_stage=50, region="NA")
+    assert rule_stalled_in_stage(base) is None  # default (region-agnostic)
+    hit = rule_stalled_in_stage({**base, "_region_aware": True})
+    assert hit is not None and hit.rule_id == "stalled_in_stage"
+    assert "NA threshold 2×" in hit.reason
+
+
+def test_stalled_region_aware_emea_more_slack() -> None:
+    # 60 days in Discovery = 2.86x: fires under default 2.5x, but EMEA's 3.5x
+    # (73.5) gives it slack and it does not fire.
+    base = base_row(stage="Discovery", days_in_stage=60, region="EMEA")
+    assert rule_stalled_in_stage(base) is not None  # default fires
+    assert rule_stalled_in_stage({**base, "_region_aware": True}) is None
+
+
+def test_stalled_region_aware_emea_proposal_extra_slack() -> None:
+    # EMEA Proposal gets a 5.0x threshold; 80 days (4.0x) does not fire.
+    row = base_row(stage="Proposal", days_in_stage=80, region="EMEA", _region_aware=True)
+    assert rule_stalled_in_stage(row) is None
+
+
+def test_premature_region_aware_apac_tolerated() -> None:
+    # APAC tolerates early deep discounts -> suppressed only when region-aware.
+    base = base_row(stage="Discovery", discount_pct=0.40, region="APAC", m_identified_pain=0)
+    assert rule_premature_deep_discount(base) is not None  # default fires
+    assert rule_premature_deep_discount({**base, "_region_aware": True}) is None
+
+
+def test_premature_region_aware_na_still_flags() -> None:
+    # Non-tolerant region is unaffected by the region-aware flag.
+    row = base_row(stage="Discovery", discount_pct=0.40, region="NA", _region_aware=True)
+    assert rule_premature_deep_discount(row) is not None
+
+
+def test_engine_region_aware_does_not_leak_flag_column() -> None:
+    rows = [base_row(deal_id="d", stage="Discovery", days_in_stage=50, region="NA")]
+    scored = run(pd.DataFrame(rows), region_aware=True)
+    assert "_region_aware" not in scored.columns
+    assert scored.iloc[0]["predicted_anomaly"]  # NA 2.0x flags this stall
+
+
+# --------------------------------------------------------------------------- #
 # Registry + engine wiring
 # --------------------------------------------------------------------------- #
 def test_registry_ids_are_unique_and_complete() -> None:

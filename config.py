@@ -63,3 +63,25 @@ STAGE_WIN_RATE = {
 FLAGGED_RISK_HAIRCUT = 0.40
 # Half-width of the low/high band around the likely estimate (±fraction).
 ESTIMATE_BAND = 0.20
+
+# --------------------------------------------------------------------------- #
+# Region-aware thresholds (opt-in business overlay).
+# Regions run their sales motion differently; the labeled synthetic data is
+# region-agnostic, so these overrides apply ONLY when a caller asks for them
+# (`engine.run(df, region_aware=True)` / the UI toggle). Off by default so the
+# headline scorecard stays region-agnostic and reproducible.
+# --------------------------------------------------------------------------- #
+# Per-region staleness multiplier; falls back to STALE_MULTIPLIER when absent.
+# US deals move fast -> flag stalls sooner; EMEA deals run long -> more slack.
+REGION_STALE_MULTIPLIER = {
+    "NA": 2.0,
+    "EMEA": 3.5,
+}
+# Most-specific override: (region, stage) -> multiplier. EMEA proposals in
+# particular legitimately linger, so give that stage extra room.
+REGION_STAGE_STALE_MULTIPLIER = {
+    ("EMEA", "Proposal"): 5.0,
+}
+# Regions where an early deep discount is normal practice -> do not flag
+# premature_deep_discount there.
+REGION_DISCOUNT_TOLERANT = ("APAC",)

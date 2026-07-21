@@ -28,6 +28,7 @@ DATA_PATH = Path(__file__).parent / "data" / "pipeline.csv"
 FLAGGED_COLUMNS = [
     "deal_id",
     "account",
+    "region",
     "segment",
     "arr",
     "stage",
@@ -40,14 +41,14 @@ st.set_page_config(page_title="Forecast Anomaly Detector", layout="wide")
 
 
 @st.cache_data(show_spinner=False)
-def _score_csv(path: str) -> pd.DataFrame:
-    """Load and score a CSV from disk (cached by path)."""
-    return run(load(path))
+def _score_csv(path: str, region_aware: bool = False) -> pd.DataFrame:
+    """Load and score a CSV from disk (cached by path + region_aware)."""
+    return run(load(path), region_aware=region_aware)
 
 
-def _score_upload(file) -> pd.DataFrame:
+def _score_upload(file, region_aware: bool = False) -> pd.DataFrame:
     """Load and score an uploaded file object."""
-    return run(load(file))
+    return run(load(file), region_aware=region_aware)
 
 
 def _has_labels(df: pd.DataFrame) -> bool:
@@ -93,20 +94,31 @@ def render_flagged(scored: pd.DataFrame, use_narrative: bool) -> None:
         return
 
     # Filters.
-    f1, f2, f3 = st.columns(3)
+    has_region = "region" in flagged.columns
+    f1, f2, f3, f4 = st.columns(4)
     segments = sorted(flagged["segment"].dropna().unique().tolist())
     stages = sorted(flagged["stage"].dropna().unique().tolist())
     seg_pick = f1.multiselect("Segment", segments, default=segments)
     stage_pick = f2.multiselect("Stage", stages, default=stages)
-    min_risk = f3.slider("Min risk score", 0, int(flagged["risk_score"].max()), 0)
-    view = flagged[
+    if has_region:
+        regions = sorted(flagged["region"].dropna().unique().tolist())
+        region_pick = f3.multiselect("Region", regions, default=regions)
+    else:
+        region_pick = None
+    min_risk = f4.slider("Min risk score", 0, int(flagged["risk_score"].max()), 0)
+
+    mask = (
         flagged["segment"].isin(seg_pick)
         & flagged["stage"].isin(stage_pick)
         & (flagged["risk_score"] >= min_risk)
-    ].sort_values("risk_score", ascending=False)
+    )
+    if region_pick is not None:
+        mask &= flagged["region"].isin(region_pick)
+    view = flagged[mask].sort_values("risk_score", ascending=False)
 
+    display_cols = [c for c in FLAGGED_COLUMNS if c in view.columns]
     st.dataframe(
-        view[FLAGGED_COLUMNS],
+        view[display_cols],
         hide_index=True,
         use_container_width=True,
         column_config={
@@ -118,8 +130,10 @@ def render_flagged(scored: pd.DataFrame, use_narrative: bool) -> None:
 
     st.markdown("#### Deal detail")
     for _, row in view.iterrows():
+        region_bit = f"{row['region']} · " if has_region else ""
         header = (
-            f"{row['deal_id']} · {row['account']} · {row['stage']} · " f"risk {row['risk_score']}"
+            f"{row['deal_id']} · {row['account']} · {region_bit}{row['stage']} · "
+            f"risk {row['risk_score']}"
         )
         with st.expander(header):
             for hit in row["hits"]:
@@ -141,6 +155,12 @@ def main() -> None:
     )
 
     mode = st.sidebar.radio("Mode", ["Demo (portfolio)", "Bring your own CSV"])
+    region_aware = st.sidebar.toggle("Region-aware thresholds", value=False)
+    st.sidebar.caption(
+        "US moves faster (flag stalls sooner), EMEA proposals linger (more "
+        "slack), APAC tolerates early deep discounts. Off = region-agnostic "
+        "baseline."
+    )
     use_narrative = st.sidebar.toggle("Show LLM briefs", value=False)
     if use_narrative and not narrative.is_available():
         st.sidebar.info("No ANTHROPIC_API_KEY detected — briefs disabled.")
@@ -152,7 +172,9 @@ def main() -> None:
         if not DATA_PATH.exists():
             st.error(f"Bundled dataset not found at {DATA_PATH}. Run `make data`.")
             return
-        scored = _score_csv(str(DATA_PATH))
+        scored = _score_csv(str(DATA_PATH), region_aware)
+        if region_aware:
+            st.caption("⚑ Region-aware thresholds ON — scorecard reflects the regional overlay.")
         render_scorecard(scored)
         st.markdown("---")
         render_flagged(scored, use_narrative)
@@ -163,7 +185,7 @@ def main() -> None:
         if upload is None:
             st.info("Upload a CSV to run the detector.")
             return
-        scored = _score_upload(upload)
+        scored = _score_upload(upload, region_aware)
         if _has_labels(scored):
             render_scorecard(scored)
             st.markdown("---")
