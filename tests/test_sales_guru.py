@@ -97,6 +97,7 @@ def test_deterministic_actions_from_top_actions() -> None:
             {
                 "deal_id": "D-9",
                 "label": "Acme ($8,000/mo)",
+                "next_meeting_date": "2026-07-24",
                 "stakeholder": "VP champion engaged",
                 "move": "Pull forward",
             }
@@ -110,9 +111,13 @@ def test_deterministic_actions_from_top_actions() -> None:
     # Every deal is listed by company + MRR (+ stage), not deal_id -- no tail.
     assert a["deals"] == ["Acme ($8,000/mo) — Negotiation", "Globex ($4,500/mo) — Proposal"]
     assert "more" not in a
-    # VP-personal calls carry through, named by company + MRR.
+    # VP-personal calls carry through, named by company + MRR + when to join.
     assert out["calls_to_join"] == [
-        {"deal": "Acme ($8,000/mo)", "why": "VP champion engaged — Pull forward"}
+        {
+            "deal": "Acme ($8,000/mo)",
+            "next_meeting_date": "2026-07-24",
+            "why": "VP champion engaged — Pull forward",
+        }
     ]
 
 

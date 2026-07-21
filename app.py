@@ -36,6 +36,7 @@ FLAGGED_COLUMNS = [
     "arr",
     "stage",
     "forecast_category",
+    "next_meeting_date",
     "risk_score",
     "top_reason",
 ]
@@ -135,6 +136,7 @@ def render_flagged(scored: pd.DataFrame, use_narrative: bool) -> None:
         column_config={
             "mrr": st.column_config.NumberColumn("MRR", format="$%d"),
             "arr": st.column_config.NumberColumn("ARR", format="$%d"),
+            "next_meeting_date": st.column_config.TextColumn("Next meeting"),
             "risk_score": st.column_config.NumberColumn("Risk"),
             "top_reason": st.column_config.TextColumn("Top reason", width="large"),
         },
@@ -161,6 +163,8 @@ def render_flagged(scored: pd.DataFrame, use_narrative: bool) -> None:
                 if pd.notna(row.get("mrr")):
                     bits.append(f"${int(row['mrr']):,}/mo MRR")
                 st.caption(" · ".join(bits))
+            nm = row.get("next_meeting_date")
+            st.caption(f"📅 Next meeting: {nm}" if pd.notna(nm) else "📅 No meeting booked")
             for hit in row["hits"]:
                 st.markdown(f"- **{hit.severity.upper()} · {hit.rule_id}** — {hit.reason}")
             for sig in row.get("signals", []) or []:

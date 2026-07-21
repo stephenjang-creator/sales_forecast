@@ -118,6 +118,10 @@ _CALL_ITEM = {
     "type": "object",
     "properties": {
         "deal": {"type": "string", "description": "Company + MRR, e.g. 'Acme Group ($8,200/mo)'."},
+        "next_meeting_date": {
+            "type": "string",
+            "description": "The deal's next_meeting_date (when to join), or '' if none is booked.",
+        },
         "why": {"type": "string", "description": "Why the VP should personally join this call."},
     },
     "required": ["deal", "why"],
@@ -174,7 +178,9 @@ _REGION_SYSTEM = (
     "and name the deals it covers. The `vp_should_join_calls` list is the handful "
     "of deals the VP should personally join a call on (calls are scarce, so it's "
     "short and skews to senior-stakeholder deals); pass those through as "
-    "calls_to_join. Lead with the highest-leverage action. Always name deals by "
+    "calls_to_join, INCLUDING each deal's next_meeting_date so the VP knows when "
+    "to join (say when none is booked). Lead with the highest-leverage action. "
+    "Always name deals by "
     "COMPANY and MRR (the tool's deals[].label, e.g. 'Acme Group ($8,200/mo)') -- "
     "never a deal_id -- and for each action list every account the tool surfaced "
     "(it already capped the set to the top-priority deals; don't drop any). Use "
@@ -274,6 +280,7 @@ def _deterministic_actions(plan: dict) -> dict:
     calls = [
         {
             "deal": c.get("label") or c.get("account") or c["deal_id"],
+            "next_meeting_date": c.get("next_meeting_date"),
             "why": f"{c['stakeholder']} — {c['move']}",
         }
         for c in (plan.get("vp_should_join_calls", []) if isinstance(plan, dict) else [])
@@ -572,7 +579,9 @@ def _print_priorities(p: dict) -> None:
         print("    ☎ Join these calls yourself (VP time is scarce):")
         for c in calls:
             name = c.get("deal") or c.get("deal_id", "")
-            print(f"       • {name}: {c['why']}")
+            when = c.get("next_meeting_date")
+            when_bit = f" — next meeting {when}" if when else " — no meeting booked, get one set"
+            print(f"       • {name}{when_bit}: {c['why']}")
 
 
 def _print_region_report(result: dict) -> None:

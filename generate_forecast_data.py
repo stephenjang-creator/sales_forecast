@@ -114,6 +114,13 @@ STAGES = ["Discovery", "Qualification", "Proposal", "Negotiation",
 OPEN_STAGES = STAGES[:4]
 STAGE_WEIGHTS = [0.18, 0.22, 0.22, 0.15, 0.14, 0.09]
 
+# Next scheduled meeting: most open deals have one on the calendar soon (sooner
+# for later stages); a fraction have none booked -- itself a "reach out" signal.
+# Closed deals have no next meeting. Drawn from a separate RNG so adding it does
+# not perturb any other generated column.
+NO_MEETING_PROB = 0.18
+STAGE_MEETING_HORIZON = {"Negotiation": 7, "Proposal": 10, "Qualification": 12, "Discovery": 14}
+
 # Typical days a healthy deal sits in each open stage (for staleness checks).
 STAGE_NORMAL_DAYS = {"Discovery": 21, "Qualification": 25,
                      "Proposal": 20, "Negotiation": 18}
@@ -400,6 +407,24 @@ def _derive(rec, today):
     return rec
 
 
+def _next_meeting(rec, today, rng):
+    """Upcoming meeting date for an open deal (or "" if none / closed).
+
+    ``rng`` is a dedicated random.Random so this draw is independent of the
+    main generation sequence -- every other column stays byte-identical.
+    """
+    if rec["stage"] not in OPEN_STAGES:
+        return ""
+    if rng.random() < NO_MEETING_PROB:
+        return ""  # nothing on the calendar -- the VP/rep needs to book one
+    horizon = STAGE_MEETING_HORIZON.get(rec["stage"], 14)
+    days = rng.randint(1, horizon)
+    dtc = rec["days_to_close"]
+    if dtc and dtc > 0:
+        days = min(days, max(1, dtc))  # never schedule the meeting past close
+    return today + timedelta(days=days)
+
+
 # ----------------------------------------------------------------------
 # Main build
 # ----------------------------------------------------------------------
@@ -435,6 +460,12 @@ def build(n=600, seed=42, anomaly_rate=0.18):
     for rec in records:
         _derive(rec, today)
 
+    # Assign next-meeting dates from a dedicated RNG so this new column does not
+    # shift the main random sequence (every other column stays reproducible).
+    meeting_rng = random.Random(seed + 777)
+    for rec in records:
+        rec["next_meeting_date"] = _next_meeting(rec, today, meeting_rng)
+
     df = pd.DataFrame(records)
     df["anomaly_types"] = df["anomaly_types"].apply(lambda x: "|".join(x))
 
@@ -444,7 +475,7 @@ def build(n=600, seed=42, anomaly_rate=0.18):
         "champion_seniority", "approval_layers", "csuite_approval",
         "mrr", "arr", "stage", "forecast_category",
         "rep", "created_date", "stage_entry_date", "orig_close_date",
-        "close_date", "close_date_pushes", "discount_pct",
+        "close_date", "next_meeting_date", "close_date_pushes", "discount_pct",
         "days_open", "days_in_stage", "days_to_close", "slip_days",
         *[f"m_{k}" for k in MEDDPICC],
         "meddpicc_total", "meddpicc_confidence",

@@ -187,7 +187,9 @@ seed 42); yours will differ if you point `FORECAST_CSV` at your own export.
   grouped by play. Each covered deal carries `label` (company + MRR),
   `champion_seniority`, and `good_champion`.
 - **Two levers (matches how a VP works):** the `actions` are plays to **delegate
-  to managers via a note** — they scale, so no cap. `vp_should_join_calls` is a
+  to managers via a note** — they scale, so no cap. Each call in
+  `vp_should_join_calls` carries a **`next_meeting_date`** so the VP knows when to
+  join (or that none is booked). `vp_should_join_calls` is a
   short, capped list (`config.VP_CALL_CAPACITY`) of **senior-stakeholder** deals
   (VP+/C-suite champion, or a C-suite approver) for the VP to **personally join**,
   because calls are scarce.

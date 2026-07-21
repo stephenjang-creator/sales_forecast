@@ -108,7 +108,7 @@ sales_forecast/
 ├── generate_forecast_data.py   # synthetic labeled pipeline (region-aware behavior)
 ├── generate_history.py         # synthetic historical bookings + forward targets
 ├── data/
-│   ├── pipeline.csv            # labeled deals: MRR/ARR, firmographics, MEDDPICC, region
+│   ├── pipeline.csv            # labeled deals: MRR/ARR, firmographics, MEDDPICC, region, next_meeting_date
 │   ├── history.csv             # 36 months of actual bookings + quota per region
 │   └── targets.csv             # current + forward quotas per region
 ├── config.py                   # every tunable threshold (+ win-rates/haircut)
@@ -381,7 +381,9 @@ flag; the plays *respond* to the flags the rules already set.
   champion-boost (all tunable in `config.py`). It also splits the VP's two levers —
   the actions are plays to **delegate to managers via a note** (they scale), plus a
   short, capped **`vp_should_join_calls`** shortlist of senior-stakeholder deals
-  (VP+/C-suite champion) for the VP to **personally join** (calls are scarce).
+  (VP+/C-suite champion) for the VP to **personally join** (calls are scarce) —
+  each with its **`next_meeting_date`** so the VP knows exactly when the call is
+  (or that none is booked and one needs setting).
 - **Chat** (`--chat`): an interactive session with every detector tool. Ask
   _"what are my top 3 things in NA?"_ and then keep prompting — _"tell me more
   about #2"_, _"who owns the Acme deal?"_, _"assess Umbra Solutions"_ — the

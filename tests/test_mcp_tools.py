@@ -44,6 +44,7 @@ def test_list_deals_shape_and_cap() -> None:
         "forecast_category",
         "arr",
         "close_date",
+        "next_meeting_date",
         "risk_score",
         "predicted_anomaly",
         "signals",
@@ -149,8 +150,12 @@ def test_region_top_actions_vp_call_shortlist_is_capped_and_senior() -> None:
     calls = plan["vp_should_join_calls"]
     assert len(calls) <= config.VP_CALL_CAPACITY  # calls are scarce
     for c in calls:
-        assert {"deal_id", "stakeholder", "move", "arr", "label", "mrr"} <= set(c.keys())
+        expected = {"deal_id", "stakeholder", "move", "arr", "label", "mrr", "next_meeting_date"}
+        assert expected <= set(c.keys())
         assert c["stakeholder"], "a call-worthy deal names its senior stakeholder"
+        # Open call-worthy deals should mostly have a meeting the VP can join;
+        # the field is always present (may be None if none is booked).
+        assert "next_meeting_date" in c
 
 
 def test_region_top_actions_region_aware_and_unknown() -> None:
@@ -192,6 +197,22 @@ def test_good_champion_and_senior_stakeholder() -> None:
         srv._senior_stakeholder(pd.Series({"champion_seniority": "Manager", "csuite_approval": 1}))
         is not None
     )
+
+
+def test_next_meeting_date_surfaced() -> None:
+    # Every deal item carries next_meeting_date; open deals usually have one
+    # booked, closed deals never do.
+    df = srv._df()
+    assert "next_meeting_date" in df.columns
+    deal = srv.list_deals(limit=1)[0]
+    assert "next_meeting_date" in deal
+    full = srv.assess_deal(deal["deal_id"])
+    assert "next_meeting_date" in full
+    # A call-worthy deal is open, so most of the shortlist can be joined.
+    for region in ("NA", "EMEA"):
+        plan = srv.region_top_actions(region)
+        for c in plan["vp_should_join_calls"]:
+            assert "next_meeting_date" in c
 
 
 def test_list_deals_flagged_only() -> None:
