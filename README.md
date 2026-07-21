@@ -1,5 +1,9 @@
 # Forecast Anomaly Detector
 
+![License: MIT](https://img.shields.io/badge/license-MIT-green)
+![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)
+![Code style: black](https://img.shields.io/badge/code%20style-black-000000)
+
 A RevOps forecast-hygiene detector for a B2B SaaS pipeline. It reads a pipeline
 export, applies **deterministic rules grounded in MEDDPICC** qualification and
 deal-hygiene signals, flags at-risk opportunities with a plain-English reason for
@@ -9,6 +13,21 @@ deal — but the **human-in-the-loop** split is the whole point: the determinist
 rules own the decision, and the model only explains and coaches. That keeps the
 system auditable — a sales manager can read any flag and verify it against the
 CRM record. All data is synthetic.
+
+**Stack:** Python · pandas · Streamlit · Model Context Protocol (MCP) · Anthropic
+SDK · pytest / ruff / black.
+
+**What it demonstrates:** a deterministic, fully-tested rule engine with a real
+evaluation harness (precision / recall / F1 against labeled ground truth); an MCP
+tool server and a multi-agent layer on top (per-region bookings forecasting and a
+deal- and region-level "sales guru"); and a disciplined human-in-the-loop design
+where the rules decide and the LLM only explains — so every flag is auditable.
+
+![The Streamlit app: the eval scorecard vs. ground truth, then a filterable table of flagged deals](docs/app.png)
+
+*The Streamlit app (`make app`): the eval scorecard vs. labeled ground truth up
+top, then per-rule accuracy and a filterable table of flagged deals. The sidebar
+toggles region-aware scoring and optional LLM briefs.*
 
 ## Eval scorecard
 
@@ -171,6 +190,12 @@ LLM briefs sit behind a per-deal toggle, so the app is fully usable without a ke
 Each flagged deal's expander also lists its **recommended plays** (from
 `detector/plays.py`) — the concrete moves to remove each flag. A **Deal signals**
 section surfaces fast movers and complex deals (below).
+
+![Flagged deals shown by company, MRR, stage, next meeting, and risk score](docs/flagged.png)
+
+*Flagged deals read the way reps think — company and MRR, stage, next-meeting
+date (or "None" when nothing's booked), and a risk score — each expandable to its
+rule hits, signals, and recommended plays.*
 
 ## Deal signals (opportunities, not just risk)
 
