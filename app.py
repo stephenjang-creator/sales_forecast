@@ -22,6 +22,7 @@ import streamlit as st
 from detector import narrative
 from detector.engine import load, run
 from detector.evaluate import ANOMALY_TYPES, overall_metrics, per_rule_metrics
+from detector.plays import recommend_plays
 
 DATA_PATH = Path(__file__).parent / "data" / "pipeline.csv"
 
@@ -163,6 +164,13 @@ def render_flagged(scored: pd.DataFrame, use_narrative: bool) -> None:
             for sig in row.get("signals", []) or []:
                 icon = "⚡" if sig.signal_id == "fast_mover" else "🧭"
                 st.markdown(f"- {icon} **{sig.signal_id}** — {sig.reason}")
+            plays = recommend_plays(list(row["hits"]))
+            if plays:
+                st.markdown("**Recommended plays**")
+                for play in plays:
+                    st.markdown(f"- 🎯 **{play.title}** _( {play.owner} )_ — {play.why}")
+                    for act in play.actions:
+                        st.markdown(f"    - {act}")
             if use_narrative:
                 if not narrative.is_available():
                     st.info("Set ANTHROPIC_API_KEY to enable LLM briefs.")

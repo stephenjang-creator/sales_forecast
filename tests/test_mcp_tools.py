@@ -82,6 +82,49 @@ def test_firmographics_and_mrr() -> None:
     assert all(d["industry"] == industries[0] for d in filtered)
 
 
+def test_recommend_plays_for_flagged_deal() -> None:
+    deal_id = _a_flagged_deal_id()
+    result = srv.recommend_plays(deal_id)
+    assert result["deal_id"] == deal_id
+    assert result["hits"], "a flagged deal must carry hits"
+    assert result["plays"], "a flagged deal must get at least one play"
+    play = result["plays"][0]
+    assert {"rule_id", "title", "why", "actions", "owner"} <= set(play.keys())
+    assert play["actions"] and all(isinstance(a, str) for a in play["actions"])
+    # Every play maps to one of the deal's hits (plays respond to flags).
+    hit_ids = {h["rule_id"] for h in result["hits"]}
+    assert all(p["rule_id"] in hit_ids for p in result["plays"])
+    json.dumps(result)
+
+
+def test_recommend_plays_not_found() -> None:
+    assert "error" in srv.recommend_plays("D-00000-nope")
+
+
+def test_region_action_plan_shape_and_buckets() -> None:
+    plan = srv.region_action_plan("NA", top_n=3)
+    assert plan["region"] == "NA"
+    assert {"deals", "flagged", "fast_movers", "stalled_or_slipped"} <= set(plan["totals"].keys())
+    prio = plan["priorities"]
+    for bucket in ("close_fast_movers", "jump_on_calls_to_remove_risk", "get_back_on_track"):
+        assert bucket in prio
+        assert len(prio[bucket]) <= 3  # capped at top_n
+    # De-risk bucket excludes stall/slip; those live in get_back_on_track.
+    for item in prio["get_back_on_track"]:
+        assert item["play"] is not None
+    # Fast movers carry the close play + a flagged marker.
+    for item in prio["close_fast_movers"]:
+        assert item["play"]["rule_id"] == "fast_mover"
+        assert "flagged" in item
+    json.dumps(plan)
+
+
+def test_region_action_plan_region_aware_and_unknown() -> None:
+    aware = srv.region_action_plan("APAC", region_aware=True)
+    assert aware["region_aware"] is True
+    assert "error" in srv.region_action_plan("Nowhere")
+
+
 def test_list_deals_flagged_only() -> None:
     deals = srv.list_deals(flagged_only=True, limit=50)
     assert deals, "expected some flagged deals"

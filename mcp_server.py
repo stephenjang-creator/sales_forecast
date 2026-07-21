@@ -29,6 +29,13 @@ from mcp.server.fastmcp import FastMCP
 import periods
 from detector.engine import load, run
 from detector.evaluate import overall_metrics, per_rule_metrics, scorecard_markdown
+from detector.plays import (
+    FAST_MOVER_PLAY,
+    STALLED_SLIPPED_RULES,
+    Play,
+    primary_play,
+)
+from detector.plays import recommend_plays as _recommend_plays
 from detector.rules import RuleHit
 
 mcp = FastMCP("forecast-detector")
@@ -493,6 +500,170 @@ def signals_summary(region: str | None = None, segment: str | None = None) -> di
         }
     except Exception as exc:  # noqa: BLE001
         return {"error": str(exc)}
+
+
+def _play_dict(play: Play) -> dict:
+    """A recommended play as plain JSON (title, why, actions, owner)."""
+    return {
+        "rule_id": play.rule_id,
+        "title": play.title,
+        "why": play.why,
+        "actions": list(play.actions),
+        "owner": play.owner,
+    }
+
+
+@mcp.tool()
+def recommend_plays(deal_id: str, region_aware: bool = False) -> dict:
+    """Recommended sales plays to de-risk one deal, from its rule hits.
+
+    Deterministic and offline: each rule the deal tripped maps to a standard
+    play (the motion a good AE would run to remove that risk), with concrete
+    next steps and an owner. Use after assess_deal to answer "what should I DO
+    about this deal?". The plays never change a flag -- they respond to it. Set
+    region_aware=True to score with the per-region threshold overlay first.
+    Returns the deal's hits plus the ordered plays, or {"error": ...} if the
+    deal is clean (no hits) or not found.
+    """
+    try:
+        df = _df(region_aware)
+        matches = df[df["deal_id"] == deal_id]
+        if matches.empty:
+            return {"error": f"deal_id {deal_id!r} not found"}
+        row = matches.iloc[0]
+        hits = _hits_of(row)
+        plays = _recommend_plays(hits)
+        return {
+            "deal_id": str(row["deal_id"]),
+            "account": str(row["account"]),
+            "region": _region_of(row),
+            "stage": str(row["stage"]),
+            "forecast_category": str(row["forecast_category"]),
+            "risk_score": int(row["risk_score"]),
+            "hits": [asdict(hit) for hit in hits],
+            "plays": [_play_dict(p) for p in plays],
+            "note": (
+                "Deterministic plays mapped from the deal's rule hits; they "
+                "respond to flags, they do not change them. Human-in-the-loop."
+            ),
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {"error": str(exc)}
+
+
+def _plan_item(row: pd.Series, play: Play | None, reason: str) -> dict:
+    """One worklist row for region_action_plan: deal identity + the move."""
+    return {
+        "deal_id": str(row["deal_id"]),
+        "account": str(row["account"]),
+        "segment": str(row["segment"]),
+        "stage": str(row["stage"]),
+        "forecast_category": str(row["forecast_category"]),
+        "arr": float(row["arr"]),
+        "mrr": _opt_num(row, "mrr", float),
+        "risk_score": int(row["risk_score"]),
+        "reason": reason,
+        "play": _play_dict(play) if play is not None else None,
+    }
+
+
+@mcp.tool()
+def region_action_plan(region: str, region_aware: bool = False, top_n: int = 5) -> dict:
+    """The top things a regional VP should do, prioritized, for one region.
+
+    Turns the pipeline into a regional VP worklist in three buckets, each ranked
+    and capped at top_n:
+
+    - close_fast_movers: fast_mover deals (empowered champion + simple process)
+      to pull forward and close, biggest ARR first.
+    - jump_on_calls_to_remove_risk: flagged deals whose risk is NOT a stall/slip
+      (thin MEDDPICC, no economic buyer, premature discount, no paper process)
+      -- get on a call and run the play. Highest risk_score first.
+    - get_back_on_track: flagged deals that have stalled in stage or slipped
+      their close date -- re-engage and reset the plan. Highest risk_score first.
+
+    Each item carries the specific deterministic play (title + actions + owner).
+    Set region_aware=True for the per-region threshold overlay. This is a risk /
+    opportunity worklist, not an attainment forecast.
+    """
+    try:
+        if not _has_region():
+            return {"error": "No 'region' column in this dataset; run `make data`."}
+        df = _df(region_aware)
+        sub = df[df["region"] == region]
+        if sub.empty:
+            return {"error": f"no deals in region {region!r}"}
+
+        n = max(1, int(top_n))
+        fast_mask = (
+            sub["fast_mover"] if "fast_mover" in sub.columns else pd.Series(False, sub.index)
+        )
+        flagged = sub[sub["predicted_anomaly"]]
+
+        def _has_stall_slip(hits: list[RuleHit]) -> bool:
+            return any(h.rule_id in STALLED_SLIPPED_RULES for h in hits)
+
+        stall_mask = flagged["hits"].apply(_has_stall_slip)
+        rescue = flagged[stall_mask]
+        de_risk = flagged[~stall_mask]
+
+        fast = sub[fast_mask].sort_values("arr", ascending=False).head(n)
+        close_fast = [
+            {
+                **_plan_item(r, FAST_MOVER_PLAY, _fast_reason(r)),
+                "flagged": bool(r["predicted_anomaly"]),
+            }
+            for _, r in fast.iterrows()
+        ]
+        de_risk = de_risk.sort_values(["risk_score", "arr"], ascending=False).head(n)
+        de_risk_items = [
+            _plan_item(r, primary_play(_hits_of(r)), str(r["top_reason"]))
+            for _, r in de_risk.iterrows()
+        ]
+        rescue = rescue.sort_values(["risk_score", "arr"], ascending=False).head(n)
+        rescue_items = [
+            _plan_item(r, primary_play(_hits_of(r)), _stall_slip_reason(_hits_of(r)))
+            for _, r in rescue.iterrows()
+        ]
+
+        return {
+            "region": region,
+            "region_aware": bool(region_aware),
+            "totals": {
+                "deals": int(len(sub)),
+                "flagged": int(len(flagged)),
+                "fast_movers": int(fast_mask.sum()),
+                "stalled_or_slipped": int(stall_mask.sum()),
+                "at_risk_arr": float(flagged["arr"].sum()),
+            },
+            "priorities": {
+                "close_fast_movers": close_fast,
+                "jump_on_calls_to_remove_risk": de_risk_items,
+                "get_back_on_track": rescue_items,
+            },
+            "note": (
+                "A prioritized regional worklist (opportunity + risk), not an "
+                "attainment forecast. Deterministic plays respond to the flags."
+            ),
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {"error": str(exc)}
+
+
+def _fast_reason(row: pd.Series) -> str:
+    """The fast_mover signal's own reason for a row, if present."""
+    for sig in row.get("signals", []) or []:
+        if sig.signal_id == "fast_mover":
+            return sig.reason
+    return "Empowered champion and a simple decision process."
+
+
+def _stall_slip_reason(hits: list[RuleHit]) -> str:
+    """The stall/slip hit's reason (the one that put a deal in the rescue bucket)."""
+    for hit in hits:
+        if hit.rule_id in STALLED_SLIPPED_RULES:
+            return hit.reason
+    return ""
 
 
 # --------------------------------------------------------------------------- #

@@ -116,19 +116,23 @@ sales_forecast/
 ├── detector/
 │   ├── rules.py                # pure anomaly rules + ALL_RULES registry
 │   ├── signals.py              # non-anomaly signals (fast movers / complex deals)
+│   ├── plays.py                # deterministic playbook: rule hit → recommended play
 │   ├── engine.py               # run rules + signals over a DataFrame → columns
 │   ├── evaluate.py             # score vs. ground truth; scorecard_markdown()
 │   └── narrative.py            # optional, offline-safe LLM briefs
-├── agents/                     # attainment estimation layer (over the MCP tools)
+├── agents/                     # estimation + coaching layer (over the MCP tools)
 │   ├── baseline.py             # deterministic risk-adjusted expected-bookings
 │   ├── mcp_client.py           # stdio client + Anthropic tool bridge
-│   └── attainment.py           # one agent per region + portfolio roll-up
+│   ├── attainment.py           # one agent per region + portfolio roll-up
+│   └── sales_guru.py           # coach a deal / prioritize a region's VP worklist
 ├── tests/
 │   ├── test_rules.py           # a firing row + a clean row per rule
 │   ├── test_signals.py         # fast-mover / complex-deal signal classifiers
+│   ├── test_plays.py           # deterministic playbook (hit → play mapping)
 │   ├── test_mcp_tools.py       # each MCP tool called directly
 │   ├── test_periods.py         # period math, history rollups, comparisons
-│   └── test_agents.py          # baseline math + stdio round-trip + agent loop
+│   ├── test_agents.py          # baseline math + stdio round-trip + agent loop
+│   └── test_sales_guru.py      # guru fallbacks + deal/region agent loops
 ├── app.py                      # Streamlit two-mode UI
 ├── mcp_server.py               # FastMCP server exposing the detector to agents
 ├── EXAMPLES.md                 # agent questions → tool calls
@@ -159,7 +163,9 @@ sales_forecast/
   schema; labels optional — the scorecard hides itself when labels are absent).
 
 LLM briefs sit behind a per-deal toggle, so the app is fully usable without a key.
-A **Deal signals** section surfaces fast movers and complex deals (below).
+Each flagged deal's expander also lists its **recommended plays** (from
+`detector/plays.py`) — the concrete moves to remove each flag. A **Deal signals**
+section surfaces fast movers and complex deals (below).
 
 ## Deal signals (opportunities, not just risk)
 
@@ -210,7 +216,11 @@ own every flag. It's read-only and makes zero LLM calls. The dataset is loaded
 and scored once at startup; point it at your own export via `FORECAST_CSV`.
 
 **Risk tools:** `list_deals`, `assess_deal`, `assess_segment`, `assess_region`,
-`forecast_summary`, `get_scorecard`, `list_regions`, `list_segments`.
+`forecast_summary`, `get_scorecard`, `list_regions`, `list_segments`,
+`list_industries`, `signals_summary`.
+**Play / action tools:** `recommend_plays` (deterministic plays to de-risk one
+deal), `region_action_plan` (a regional VP's prioritized worklist — fast movers
+to close, risk to remove, stalled/slipped to rescue).
 **Time / bookings tools:** `bookings_rollup` (current month/quarter projection +
 attainment), `pipeline_by_period` (bookings distribution across periods),
 `bookings_history` (actuals by period), `period_comparison` (MoM/QoQ/YoY).
@@ -319,6 +329,53 @@ periods (e.g. EMEA 2026-Q2 finished at 99% attainment, +15% YoY).
 
 Attainment uses **synthetic quotas** (`data/targets.csv`); swap in your team's
 real targets and historical win-rates (`config.py`) to make it your own.
+
+## Sales guru (recommended plays + regional priorities)
+
+The detector flags *what's* at risk; the **sales guru** answers *what to do about
+it*. It's the same deterministic-core / LLM-coaches / human-in-the-loop split:
+plays are mapped from flags by pure code, and the agent only personalizes them.
+
+**Deterministic playbook (`detector/plays.py`).** Every anomaly rule maps to a
+standard play — the motion a good AE runs to remove that specific risk — with
+concrete `actions` and an `owner`. It never calls an LLM and never changes a
+flag; the plays *respond* to the flags the rules already set.
+
+| Rule (flag) | Recommended play |
+| --- | --- |
+| `slipped_close_date` | Reset the close plan with a mutual action plan |
+| `stalled_in_stage` | Re-engage and manufacture a next step |
+| `commit_low_meddpicc` | Close the MEDDPICC gaps before it stays in Commit |
+| `late_stage_no_economic_buyer` | Get to the Economic Buyer now |
+| `premature_deep_discount` | Re-anchor on value before price |
+| `imminent_close_no_paper_process` | Kick off procurement and legal immediately |
+
+**The guru agent (`agents/sales_guru.py`)** runs in two modes over the MCP tools:
+
+- **Coach one deal** (`--deal D-10023`): reads `assess_deal` + `recommend_plays`,
+  then personalizes the plays to the deal — a talk track for the next call,
+  sharpened next steps, the right owner.
+- **Prioritize a region** (`--region NA` / `--all`): reads `region_action_plan`
+  and turns it into a regional VP's ranked worklist in three buckets — **close
+  fast movers** (empowered-champion / simple-process deals to pull forward),
+  **jump on calls to remove risk** (flagged deals whose risk isn't a stall/slip),
+  and **get stalled/slipped deals back on track**. Each item names the deal and
+  the specific move.
+
+```bash
+export ANTHROPIC_API_KEY=sk-...
+make guru                                    # every region's VP priorities
+python -m agents.sales_guru --deal D-10023   # coach one deal
+python -m agents.sales_guru --region NA      # one region's worklist
+python -m agents.sales_guru --all --json     # machine-readable
+
+make guru-dry                                # NO key: deterministic plays / worklist
+make guru-dry DEAL=D-10023                   # deterministic plays for one deal
+```
+
+Like the attainment agent, `--dry-run` runs the whole stdio + tools flow with no
+key or network — it returns the deterministic plays / worklist straight from the
+tools, so the plumbing (and the plays themselves) are verifiable offline.
 
 ---
 

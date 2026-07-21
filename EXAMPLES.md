@@ -150,3 +150,39 @@ seed 42); yours will differ if you point `FORECAST_CSV` at your own export.
 - **Narration tip:** these are opportunity/duration signals, *not* anomalies —
   read them alongside the risk flags to prioritize (a fast mover with no risk
   flag is a clean pull-forward; a complex deal forecast as Commit is worth a look).
+
+---
+
+## Sales-guru questions (what to DO, and what a VP should do first)
+
+### 16. What should I do about this deal?
+> **"D-10023 is flagged — what plays should I run?"**
+
+- **Call:** `recommend_plays("D-10023")` (deterministic), then optionally the
+  `sales_guru` agent to personalize.
+- **Returns:** the deal's `hits` plus an ordered list of `plays`, each with a
+  title, the risk it removes (`why`), concrete `actions`, and an `owner`.
+- **What it means:** each play maps to a flag the rules already set — the plays
+  *respond* to flags, they never change them. `premature_deep_discount` → "Re-anchor
+  on value before price"; `late_stage_no_economic_buyer` → "Get to the Economic
+  Buyer now"; and so on.
+- **Narration tip:** read the play's actions back as a checklist and name the
+  owner. For a personalized talk track, run
+  `python -m agents.sales_guru --deal D-10023` (or `--dry-run` for the plays alone).
+
+### 17. Regional VP priorities
+> **"I run NA — what are the top things my team should do this week?"**
+
+- **Call:** `region_action_plan("NA")` (deterministic), or the `sales_guru` agent
+  (`--region NA` / `--all`) to narrate it.
+- **Returns:** three ranked buckets, each capped at `top_n` and carrying the
+  specific play: `close_fast_movers` (empowered-champion / simple-process deals
+  to pull forward, biggest ARR first), `jump_on_calls_to_remove_risk` (flagged
+  deals whose risk isn't a stall/slip — get on a call and run the play, highest
+  risk first), and `get_back_on_track` (deals stalled in stage or slipping their
+  close date — re-engage and reset).
+- **Narration tip:** lead with the single highest-leverage move, then the named
+  deals per bucket. This is a risk/opportunity worklist, **not** an attainment
+  forecast — pair with `bookings_rollup` for the number.
+- **Run the agent:** `python -m agents.sales_guru --all` (one guru per region),
+  or `--all --dry-run` for the deterministic worklist with no key.

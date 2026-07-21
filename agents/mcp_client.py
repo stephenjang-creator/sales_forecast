@@ -81,6 +81,32 @@ async def anthropic_tool_schema(session: ClientSession) -> list[dict]:
     return schema
 
 
+async def gather_deal_context(
+    session: ClientSession, deal_id: str, region_aware: bool = False
+) -> dict:
+    """Everything the sales guru needs to coach ONE deal, via tools.
+
+    Pairs the full risk picture (``assess_deal``) with the deterministic plays
+    (``recommend_plays``) so the agent personalizes an existing motion instead
+    of inventing one. ``region_aware`` opts into the per-region overlay.
+    """
+    ra = {"region_aware": region_aware}
+    assessment = await call_tool(session, "assess_deal", {"deal_id": deal_id, **ra})
+    plays = await call_tool(session, "recommend_plays", {"deal_id": deal_id, **ra})
+    return {"deal_id": deal_id, "assessment": assessment, "plays": plays}
+
+
+async def gather_region_plan(
+    session: ClientSession, region: str, region_aware: bool = False, top_n: int = 5
+) -> dict:
+    """The prioritized regional VP worklist (``region_action_plan``), via tools."""
+    return await call_tool(
+        session,
+        "region_action_plan",
+        {"region": region, "region_aware": region_aware, "top_n": top_n},
+    )
+
+
 async def gather_region_context(
     session: ClientSession, region: str, region_aware: bool = False
 ) -> dict:

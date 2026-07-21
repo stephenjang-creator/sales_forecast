@@ -1,4 +1,4 @@
-.PHONY: data history test eval eval-region app mcp attainment attainment-dry
+.PHONY: data history test eval eval-region app mcp attainment attainment-dry guru guru-dry
 
 # Regenerate the bundled datasets (already committed; only needed to reseed).
 data: history
@@ -37,3 +37,13 @@ attainment:
 # + tools + estimator pipeline end to end).
 attainment-dry:
 	python -m agents.attainment --all --dry-run
+
+# Sales guru: recommend plays to de-risk deals and prioritize each region's VP
+# worklist (fast movers to close, risk to remove, stalled/slipped to rescue).
+# Needs ANTHROPIC_API_KEY. Pass DEAL=D-10023 to coach one deal instead.
+guru:
+	python -m agents.sales_guru $(if $(DEAL),--deal $(DEAL),--all)
+
+# Same flow with no key/network: deterministic plays / worklist only.
+guru-dry:
+	python -m agents.sales_guru $(if $(DEAL),--deal $(DEAL),--all) --dry-run
