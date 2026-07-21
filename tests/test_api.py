@@ -19,7 +19,9 @@ def test_full_payload_shape() -> None:
     p = forecast.full_payload()
     assert p["regionOrder"] == ["NA", "EMEA", "APAC", "LATAM"]
     assert p["deals"], "expected flagged deals"
-    assert len(p["kpis"]) == 5  # booked + flagged + at-risk + critical + top-region
+    # Server sends the open-pipeline KPIs; the timeframe-scoped Booked tile is
+    # composed client-side from bookedDeals + the header timeframe control.
+    assert len(p["kpis"]) == 3  # at-risk + critical + top-region
     assert p["narrative"]
     assert len(p["scorecard"]["metrics"]) == 4
     assert len(p["scorecard"]["perRule"]) == 6

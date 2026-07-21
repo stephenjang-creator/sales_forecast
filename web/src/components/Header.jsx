@@ -1,6 +1,49 @@
 import { ACCENT, C, MONO } from "../tokens.js";
+import { TIMEFRAMES } from "../time.js";
 
-export default function Header({ onExport, onShare }) {
+// Segmented control (This month / This quarter / Year to date). Scopes booked
+// figures only. Active button = white + shadow + dark 600; inactive = muted 500.
+function TimeframeControl({ timeframe, onTimeframe }) {
+  return (
+    <div
+      title="Scopes booked (Closed Won) figures — the open pipeline is unaffected"
+      style={{
+        display: "flex",
+        gap: 3,
+        padding: 3,
+        borderRadius: 9,
+        background: "oklch(0.95 0.004 260)",
+      }}
+    >
+      {TIMEFRAMES.map((t) => {
+        const active = timeframe === t.key;
+        return (
+          <button
+            key={t.key}
+            onClick={() => onTimeframe(t.key)}
+            style={{
+              height: 30,
+              padding: "0 11px",
+              borderRadius: 7,
+              border: "none",
+              fontFamily: "inherit",
+              fontSize: 12,
+              fontWeight: active ? 600 : 500,
+              cursor: "pointer",
+              background: active ? "#fff" : "transparent",
+              color: active ? C.text : C.muted,
+              boxShadow: active ? "0 1px 2px oklch(0.5 0.02 260 / 0.12)" : "none",
+            }}
+          >
+            {t.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+export default function Header({ onExport, onShare, timeframe, onTimeframe }) {
   return (
     <div
       style={{
@@ -55,7 +98,8 @@ export default function Header({ onExport, onShare }) {
           explains and routes — every number is auditable. Data is synthetic.
         </p>
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+        <TimeframeControl timeframe={timeframe} onTimeframe={onTimeframe} />
         <button onClick={onExport} style={btn.outline}>
           Export CSV
         </button>

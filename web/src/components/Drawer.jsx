@@ -56,8 +56,8 @@ export default function Drawer({ deal, onClose, onAsk }) {
                     height: 32,
                     padding: "0 9px",
                     borderRadius: 8,
-                    background: isClosed ? "oklch(0.91 0.09 155)" : tc.chipBg,
-                    color: isClosed ? C.closedText : tc.chipFg,
+                    background: isClosed ? C.closedChipBg : tc.chipBg,
+                    color: isClosed ? C.closedChipFg : tc.chipFg,
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
@@ -104,14 +104,13 @@ export default function Drawer({ deal, onClose, onAsk }) {
                   marginBottom: 24,
                   padding: "13px 15px",
                   borderRadius: 10,
-                  background: C.closedBg,
-                  border: `1px solid ${C.closedBorder}`,
+                  background: C.noteBg,
+                  border: `1px solid ${C.noteBorder}`,
                 }}
               >
-                <span style={{ fontSize: 16, color: C.closedText }}>✓</span>
-                <div style={{ fontSize: 13, lineHeight: 1.45, color: C.closedText, fontWeight: 500 }}>
-                  Booked (Closed Won) — this deal is already won and counts toward the
-                  period forecast. No risk, no action needed.
+                <span style={{ fontSize: 16, color: C.closedBadgeFg }}>✓</span>
+                <div style={{ fontSize: 13, lineHeight: 1.45, color: C.closedBadgeFg }}>
+                  <strong>Closed Won — {deal.amountStr} booked.</strong> No open anomalies.
                 </div>
               </div>
             ) : (
@@ -204,19 +203,23 @@ function TopTile({ label, value, mono }) {
   );
 }
 
+function forecastStyle(fc) {
+  if (fc === "Commit") return { background: "oklch(0.3 0.014 262)", color: "#fff", border: "none" };
+  if (fc === "Closed")
+    return { background: C.closedBadgeBg, color: C.closedBadgeFg, border: "none" };
+  if (fc === "Omitted")
+    return { background: C.omittedBg, color: C.omittedFg, border: `1px solid ${C.border}` };
+  return {
+    background: "oklch(0.95 0.004 260)",
+    color: "oklch(0.45 0.012 260)",
+    border: `1px solid ${C.border}`,
+  };
+}
+
 function ForecastBadge({ fc }) {
-  const commit = fc === "Commit";
   return (
     <span
-      style={{
-        fontSize: 11,
-        fontWeight: 600,
-        padding: "3px 9px",
-        borderRadius: 6,
-        background: commit ? "oklch(0.3 0.014 262)" : "oklch(0.95 0.004 260)",
-        color: commit ? "#fff" : "oklch(0.45 0.012 260)",
-        border: commit ? "none" : `1px solid ${C.border}`,
-      }}
+      style={{ fontSize: 11, fontWeight: 600, padding: "3px 9px", borderRadius: 6, ...forecastStyle(fc) }}
     >
       {fc}
     </span>

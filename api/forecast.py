@@ -266,25 +266,10 @@ def kpis_and_summary(deals: list[dict]) -> dict:
         by_region[d["region"]] = by_region.get(d["region"], 0.0) + d["arr"]
     top_region = max(by_region.items(), key=lambda kv: kv[1]) if by_region else ("--", 0.0)
 
-    booked_arr, booked_n = _booked_totals()
-    bk = bookings_summary()
-    ytd = bk["ytd"]
-    yoy_pct = ytd["pct"]
-    yoy_note = f"{yoy_pct:+.0f}% YoY" if yoy_pct is not None else "booked"
-
+    # The Booked KPI + booked narrative clause are timeframe-scoped, so the client
+    # composes them from bookedDeals + the header timeframe control. The server
+    # owns the open-pipeline tiles and the open-pipeline half of the narrative.
     kpis = [
-        {
-            "label": "Booked YTD · Closed Won",
-            "value": money(ytd["booked"]),
-            "sub": f"{yoy_note} · {money(booked_arr)} all-time",
-            "tone": "positive",
-        },
-        {
-            "label": "Forecasted, flagged",
-            "value": money(flagged_arr),
-            "sub": f"{total_flagged} of {total_deals} deals",
-            "tone": "muted",
-        },
         {
             "label": "At risk (High + Critical)",
             "value": money(at_risk_arr),
@@ -304,11 +289,10 @@ def kpis_and_summary(deals: list[dict]) -> dict:
             "tone": "muted",
         },
     ]
-    yoy_phrase = f" ({yoy_note})" if yoy_pct is not None else ""
     narrative = (
-        f"{money(ytd['booked'])} booked year-to-date{yoy_phrase}. Of the open pipeline, "
-        f"{money(at_risk_arr)} of Commit + Best Case is flagged across {len(at_risk)} "
-        f"at-risk deals — {top_region[0]} carries the most exposure at "
+        f"{money(flagged_arr)} of open pipeline is flagged across {total_flagged} of "
+        f"{total_deals} deals; {money(at_risk_arr)} of Commit + Best Case is at risk across "
+        f"{len(at_risk)} — {top_region[0]} carries the most exposure at "
         f"{money(top_region[1])}, driven by low-confidence Commits and slipped close dates."
     )
     return {"kpis": kpis, "narrative": narrative}

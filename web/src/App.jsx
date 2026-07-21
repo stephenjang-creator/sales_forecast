@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { askAgent, exportCsv, fetchForecast } from "./api.js";
 import { ACCENT, C } from "./tokens.js";
+import { inTimeframe, tfLabel, tfShort } from "./time.js";
 import Header from "./components/Header.jsx";
 import AgentBar from "./components/AgentBar.jsx";
 import Summary from "./components/Summary.jsx";
@@ -21,6 +22,7 @@ export default function App() {
   const [filters, setFilters] = useState({ tiers: [], regions: [], segments: [] });
   const [hover, setHover] = useState(null);
   const [selected, setSelected] = useState(null);
+  const [timeframe, setTimeframe] = useState("quarter"); // scopes booked figures only
 
   useEffect(() => {
     fetchForecast().then(setData).catch((e) => setError(String(e)));
@@ -53,6 +55,24 @@ export default function App() {
     return <Center>Could not load the forecast — is the API running? ({error})</Center>;
   if (!data) return <Center>Loading forecast…</Center>;
 
+  // Booked figures are timeframe-scoped (client-side); the open pipeline is not.
+  const asOf = data.bookings?.asOf;
+  const money = (n) => (n >= 1e6 ? `$${(n / 1e6).toFixed(2)}M` : `$${Math.round(n / 1000)}k`);
+  const bookedInTf = (data.bookedDeals || []).filter((d) => inTimeframe(d.closeISO, timeframe, asOf));
+  const bookedArr = bookedInTf.reduce((s, d) => s + d.arr, 0);
+  const kpis = [
+    {
+      label: `Booked · ${tfLabel(timeframe)}`,
+      value: money(bookedArr),
+      sub: `${bookedInTf.length} closed-won`,
+      tone: "booked",
+    },
+    ...data.kpis,
+  ];
+  const narrative =
+    `Booked ${tfShort(timeframe)}: ${money(bookedArr)} across ${bookedInTf.length} closed-won. ` +
+    data.narrative;
+
   const tabBtn = (key, label) => (
     <button
       onClick={() => setTab(key)}
@@ -77,7 +97,12 @@ export default function App() {
   return (
     <div style={{ minHeight: "100vh", padding: "28px 32px 80px" }}>
       <div style={{ maxWidth: 1360, margin: "0 auto" }}>
-        <Header onExport={() => exportCsv(data.deals)} onShare={onShare} />
+        <Header
+          onExport={() => exportCsv(data.deals)}
+          onShare={onShare}
+          timeframe={timeframe}
+          onTimeframe={setTimeframe}
+        />
         <AgentBar
           query={query}
           setQuery={setQuery}
@@ -86,7 +111,7 @@ export default function App() {
           onAsk={onAsk}
           onClear={() => setResult(null)}
         />
-        <Summary narrative={data.narrative} kpis={data.kpis} />
+        <Summary narrative={narrative} kpis={kpis} />
         <FastMover fastMover={data.fastMover} onOpen={setSelected} />
 
         <div style={{ display: "flex", alignItems: "center", gap: 4, borderBottom: `1px solid ${C.border}`, marginBottom: 20 }}>
@@ -100,7 +125,8 @@ export default function App() {
             deals={data.deals}
             bookedDeals={data.bookedDeals || []}
             regionOrder={data.regionOrder}
-            asOf={data.bookings?.asOf}
+            asOf={asOf}
+            timeframe={timeframe}
             filters={filters}
             setFilters={setFilters}
             onOpen={(d) => {

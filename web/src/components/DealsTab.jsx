@@ -1,36 +1,10 @@
 import { useRef, useState } from "react";
 import { ACCENT, C, MONO, tierColors, tierOf } from "../tokens.js";
+import { inTimeframe } from "../time.js";
 
 const GRID = "74px minmax(170px,1.5fr) 136px 118px 116px 100px 112px";
 const TIERS = ["Critical", "High", "Medium", "Low"];
 const SEGMENTS = ["Enterprise", "Mid-Market", "SMB"];
-
-// Filter by the period a deal's close (or booking) date falls in, relative to the
-// data's "as of" date. Open deals filter on their projected close; booked deals on
-// when they closed. ISO strings compare lexically, so YTD is a plain string range.
-const PERIODS = [
-  { key: "all", label: "All dates" },
-  { key: "month", label: "This month" },
-  { key: "quarter", label: "This quarter" },
-  { key: "ytd", label: "YTD" },
-  { key: "year", label: "This year" },
-];
-
-const quarterOf = (m) => Math.floor((m - 1) / 3) + 1;
-
-function inPeriod(iso, period, asOf) {
-  if (period === "all" || !asOf) return true;
-  if (!iso) return false;
-  const ay = +asOf.slice(0, 4);
-  const am = +asOf.slice(5, 7);
-  const y = +iso.slice(0, 4);
-  const m = +iso.slice(5, 7);
-  if (period === "month") return y === ay && m === am;
-  if (period === "quarter") return y === ay && quarterOf(m) === quarterOf(am);
-  if (period === "year") return y === ay;
-  if (period === "ytd") return y === ay && iso <= asOf;
-  return true;
-}
 
 const FORECAST_INFO =
   "Forecast rollup, most-committed first — Closed (Won, booked) › Commit " +
@@ -120,19 +94,23 @@ function Divider() {
   return <div style={{ width: 1, height: 22, background: C.border }} />;
 }
 
+// Forecast badge, per the v2 ladder: Commit filled dark; Best Case / Pipeline
+// gray-bordered; Omitted faint; Closed green.
+function forecastStyle(fc) {
+  if (fc === "Commit")
+    return { background: "oklch(0.3 0.014 262)", color: "#fff", border: "none" };
+  if (fc === "Closed")
+    return { background: C.closedBadgeBg, color: C.closedBadgeFg, border: "none" };
+  if (fc === "Omitted")
+    return { background: C.omittedBg, color: C.omittedFg, border: `1px solid ${C.border}` };
+  // Best Case + Pipeline
+  return { background: "oklch(0.95 0.004 260)", color: "oklch(0.45 0.012 260)", border: `1px solid ${C.border}` };
+}
+
 function ForecastBadge({ fc }) {
-  const commit = fc === "Commit";
   return (
     <span
-      style={{
-        fontSize: 11,
-        fontWeight: 600,
-        padding: "3px 9px",
-        borderRadius: 6,
-        background: commit ? "oklch(0.3 0.014 262)" : "oklch(0.95 0.004 260)",
-        color: commit ? "#fff" : "oklch(0.45 0.012 260)",
-        border: commit ? "none" : `1px solid ${C.border}`,
-      }}
+      style={{ fontSize: 11, fontWeight: 600, padding: "3px 9px", borderRadius: 6, ...forecastStyle(fc) }}
     >
       {fc}
     </span>
@@ -242,22 +220,24 @@ function Cell({ text }) {
   );
 }
 
-// A booked Closed Won deal: light-green, no risk score, no action. Static (no
-// hover peek, no drawer) because there's nothing left to do on it.
-function ClosedRow({ deal }) {
+// A booked Closed Won deal: light-green, ✓ instead of a risk score, no hover peek
+// -- but it still opens the drawer (which shows the booked, no-action variant).
+function ClosedRow({ deal, onOpen }) {
   return (
     <div
+      onClick={() => onOpen(deal)}
       style={{
         display: "grid",
         gridTemplateColumns: GRID,
         alignItems: "center",
         padding: "11px 16px",
-        borderBottom: `1px solid ${C.hairline}`,
+        borderBottom: `1px solid ${C.closedBorder}`,
         background: C.closedBg,
+        cursor: "pointer",
       }}
     >
       <div style={{ display: "inline-flex", alignItems: "center", gap: 9, width: "fit-content" }}>
-        <div style={{ width: 4, height: 28, borderRadius: 3, background: C.closedBorder }} />
+        <div style={{ width: 4, height: 28, borderRadius: 3, background: C.closedBand }} />
         <div
           title="Closed Won — booked, no risk"
           style={{
@@ -265,8 +245,8 @@ function ClosedRow({ deal }) {
             height: 26,
             padding: "0 7px",
             borderRadius: 7,
-            background: "oklch(0.91 0.09 155)",
-            color: C.closedText,
+            background: C.closedChipBg,
+            color: C.closedChipFg,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -295,7 +275,7 @@ function ClosedRow({ deal }) {
             {deal.mrrStr}
           </span>
         </div>
-        <div style={{ fontSize: 11, color: C.closedText, fontFamily: MONO, marginTop: 1 }}>
+        <div style={{ fontSize: 11, color: C.closedBadgeFg, fontFamily: MONO, marginTop: 1 }}>
           {deal.id} · Closed Won
         </div>
       </div>
@@ -303,18 +283,7 @@ function ClosedRow({ deal }) {
       <Cell text={deal.manager} />
       <div style={{ fontSize: 12.5, color: C.cell }}>{deal.stage}</div>
       <div>
-        <span
-          style={{
-            fontSize: 11,
-            fontWeight: 600,
-            padding: "3px 9px",
-            borderRadius: 6,
-            background: "oklch(0.9 0.09 155)",
-            color: C.closedText,
-          }}
-        >
-          Closed
-        </span>
+        <ForecastBadge fc="Closed" />
       </div>
       <div style={{ textAlign: "right", fontSize: 13.5, fontWeight: 600, color: "oklch(0.26 0.014 262)", fontFamily: MONO }}>
         {deal.amountStr}
@@ -323,12 +292,12 @@ function ClosedRow({ deal }) {
   );
 }
 
-// A clickable, sortable column header. Shows ▲/▼ on the active column and a faint
-// ↕ on the rest so every column reads as sortable.
+// A clickable, sortable column header. Active column renders in the accent color
+// with a ↑/↓ suffix; inactive columns are muted (per the v2 spec).
 function SortHeader({ col, sort, onSort }) {
   const active = sort.col === col.key;
   const right = col.align === "right";
-  const arrow = active ? (sort.dir === "asc" ? "▲" : "▼") : "↕";
+  const arrow = active ? (sort.dir === "asc" ? " ↑" : " ↓") : "";
   return (
     <button
       onClick={() => onSort(col.key)}
@@ -353,9 +322,18 @@ function SortHeader({ col, sort, onSort }) {
       onMouseOver={(e) => !active && (e.currentTarget.style.color = C.text)}
       onMouseOut={(e) => !active && (e.currentTarget.style.color = C.muted)}
     >
-      {right && <span>{col.label}</span>}
-      <span style={{ fontSize: 9, opacity: active ? 1 : 0.4 }}>{arrow}</span>
-      {!right && <span>{col.label}</span>}
+      {right && (
+        <span>
+          {col.label}
+          {arrow}
+        </span>
+      )}
+      {!right && (
+        <span>
+          {col.label}
+          {arrow}
+        </span>
+      )}
       {col.info && (
         <span
           title={col.info}
@@ -461,6 +439,7 @@ export default function DealsTab({
   bookedDeals = [],
   regionOrder,
   asOf,
+  timeframe,
   filters,
   setFilters,
   onOpen,
@@ -470,7 +449,6 @@ export default function DealsTab({
   const [sort, setSort] = useState({ col: "risk", dir: "desc" });
   const [collapsed, setCollapsed] = useState({});
   const [showClosed, setShowClosed] = useState(true);
-  const [period, setPeriod] = useState("all");
 
   const toggle = (key, val) =>
     setFilters((f) => ({
@@ -494,19 +472,23 @@ export default function DealsTab({
     (filters.regions.length === 0 || filters.regions.includes(d.region)) &&
     (filters.segments.length === 0 || filters.segments.includes(d.segment));
 
-  const inP = (d) => inPeriod(d.closeISO, period, asOf);
+  // Open flagged deals are never timeframe-scoped. Booked deals are scoped by the
+  // header timeframe (which booking window to count) and the Closed Won toggle.
   const shown = deals.filter(
-    (d) =>
-      inRegionSeg(d) &&
-      inP(d) &&
-      (filters.tiers.length === 0 || filters.tiers.includes(tierOf(d.risk)))
+    (d) => inRegionSeg(d) && (filters.tiers.length === 0 || filters.tiers.includes(tierOf(d.risk)))
   );
-  const closedShown = showClosed ? bookedDeals.filter((d) => inRegionSeg(d) && inP(d)) : [];
+  const closedShown = showClosed
+    ? bookedDeals.filter((d) => inRegionSeg(d) && inTimeframe(d.closeISO, timeframe, asOf))
+    : [];
 
   const groups = regionOrder
     .map((region) => {
       const flaggedRows = sortRows(shown.filter((d) => d.region === region), sort);
-      const closedRows = sortRows(closedShown.filter((d) => d.region === region), sort);
+      // Booked rows always sort to the bottom of their region by ARR desc.
+      const closedRows = sortRows(
+        closedShown.filter((d) => d.region === region),
+        { col: "arr", dir: "desc" }
+      );
       return {
         region,
         flaggedRows,
@@ -535,26 +517,6 @@ export default function DealsTab({
         </div>
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 18 }}>
-        <span
-          style={{
-            fontSize: 11,
-            fontWeight: 600,
-            letterSpacing: "0.03em",
-            textTransform: "uppercase",
-            color: C.muted,
-          }}
-        >
-          Close period
-        </span>
-        {PERIODS.map((p) => (
-          <Pill key={p.key} label={p.label} active={period === p.key} onClick={() => setPeriod(p.key)} />
-        ))}
-        <span style={{ fontSize: 11.5, color: C.faint, marginLeft: 4 }}>
-          by projected close (open) / booking date (closed)
-        </span>
-      </div>
-
       {groups.map((g) => {
         const isCollapsed = !!collapsed[g.region];
         return (
@@ -575,7 +537,7 @@ export default function DealsTab({
                   <DealRow key={d.id} deal={d} onOpen={onOpen} onHover={onHover} onLeave={onLeave} />
                 ))}
                 {g.closedRows.map((d) => (
-                  <ClosedRow key={d.id} deal={d} />
+                  <ClosedRow key={d.id} deal={d} onOpen={onOpen} />
                 ))}
               </div>
             )}
@@ -614,9 +576,9 @@ function ClosedToggle({ on, count, onToggle }) {
           fontFamily: "inherit",
           cursor: "pointer",
           transition: "all .12s",
-          border: `1px solid ${on ? C.closedBorder : C.border}`,
-          background: on ? C.closedBg : "#fff",
-          color: on ? C.closedText : "oklch(0.45 0.012 260)",
+          border: `1px solid ${on ? C.toggleShownBorder : C.border}`,
+          background: on ? C.toggleShownBg : "#fff",
+          color: on ? C.closedBadgeFg : "oklch(0.45 0.012 260)",
         }}
       >
         {on ? `✓ Shown (${count})` : `Hidden (${count})`}
