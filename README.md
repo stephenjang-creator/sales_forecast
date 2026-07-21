@@ -1,33 +1,38 @@
-# Forecast Anomaly Detector
+# Intelligent Forecast
 
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
 ![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)
+![React + Vite](https://img.shields.io/badge/react-vite-149eca)
 ![Code style: black](https://img.shields.io/badge/code%20style-black-000000)
 
-A RevOps forecast-hygiene detector for a B2B SaaS pipeline. It reads a pipeline
-export, applies **deterministic rules grounded in MEDDPICC** qualification and
-deal-hygiene signals, flags at-risk opportunities with a plain-English reason for
-every flag, and scores its own accuracy against a labeled test set. An optional
-LLM layer writes a short "why it's at risk, what to do next" brief per flagged
-deal — but the **human-in-the-loop** split is the whole point: the deterministic
-rules own the decision, and the model only explains and coaches. That keeps the
-system auditable — a sales manager can read any flag and verify it against the
-CRM record. All data is synthetic.
+An executive-facing **forecast-risk dashboard** for a B2B SaaS pipeline. It reads
+a pipeline export, applies **deterministic rules grounded in MEDDPICC** and
+deal-hygiene, and surfaces *which committed / best-case deals are at risk, and
+why* — money at risk (ARR) up top, a region-grouped deal list with risk bands, a
+click-to-open detail drawer, and an "Ask anything" bar that routes questions to
+one of four agents. The **human-in-the-loop** split is the whole point: the
+deterministic rules own every flag and risk score; the model only explains and
+routes. Every number is auditable — a sales manager can read any flag and verify
+it against the CRM record. All data is synthetic.
 
-**Stack:** Python · pandas · Streamlit · Model Context Protocol (MCP) · Anthropic
-SDK · pytest / ruff / black.
+**Stack:** React + Vite · FastAPI · Python · pandas · Model Context Protocol
+(MCP) · Anthropic SDK · Docker · pytest / ruff / black.
 
 **What it demonstrates:** a deterministic, fully-tested rule engine with a real
-evaluation harness (precision / recall / F1 against labeled ground truth); an MCP
-tool server and a multi-agent layer on top (per-region bookings forecasting and a
-deal- and region-level "sales guru"); and a disciplined human-in-the-loop design
-where the rules decide and the LLM only explains — so every flag is auditable.
+evaluation harness (precision / recall / F1 vs. labeled ground truth); a FastAPI
+service + React SPA deployable as one container; an MCP tool server and a
+multi-agent layer (per-region bookings forecasting, a deal/region "sales guru",
+and the dashboard's agent bar); and a disciplined design where the rules decide
+and the LLM only explains — so every flag is auditable.
 
-![The Streamlit app: the eval scorecard vs. ground truth, then a filterable table of flagged deals](docs/app.png)
+![Intelligent Forecast — executive dashboard: money at risk, agent bar, and the region-grouped flagged-deal list](docs/dashboard.png)
 
-*The Streamlit app (`make app`): the eval scorecard vs. labeled ground truth up
-top, then per-rule accuracy and a filterable table of flagged deals. The sidebar
-toggles region-aware scoring and optional LLM briefs.*
+*The web dashboard (`make api` + `make web-build`, or `docker run`): money at
+risk up top, an agent bar that routes to four RevOps agents, a Fast Mover upside
+alert, and the region-grouped flagged-deal list — each row opening a detail
+drawer with the flagging reason and recommended step. Deploy it anywhere with
+Docker (see [`DEPLOY.md`](DEPLOY.md)); set `ANTHROPIC_API_KEY` for LLM-backed
+agent answers, or run it fully offline.*
 
 ## Eval scorecard
 
@@ -102,9 +107,41 @@ make mcp        # python mcp_server.py
 ```
 
 The core (`rules`, `engine`, `evaluate`) makes **zero network calls** and runs
-end to end with no API key. Only `detector/narrative.py` touches the Anthropic
-API; set `ANTHROPIC_API_KEY` to enable LLM briefs, or leave it unset and they're
-skipped.
+end to end with no API key. Only the optional LLM paths (`detector/narrative.py`,
+the agents, and the dashboard's agent bar) touch the Anthropic API; set
+`ANTHROPIC_API_KEY` to enable them, or leave it unset and they degrade gracefully.
+
+## Web dashboard (Intelligent Forecast)
+
+The primary product is a **React + Vite** single-page dashboard served by a
+**FastAPI** backend (`api/`) that reuses the detector — the two deploy as **one
+container**. The API is read-only:
+
+- `GET /api/forecast` — flagged deals (with owner / manager / MRR / ARR, and each
+  firing rule's reason + recommended step), KPI tiles, the AI summary line, the
+  model-health scorecard, and the Fast Mover banner.
+- `POST /api/ask` — routes a natural-language question to one of four agents
+  (Risk Triage, Forecast Explainer, Pipeline Analyst, Deal Rescue Planner) and
+  answers from the real data; uses the LLM when `ANTHROPIC_API_KEY` is set,
+  otherwise a deterministic answer.
+
+```bash
+# Local dev (hot reload): API on :8000, SPA on :5173 (Vite proxies /api)
+make api            # terminal 1 — uvicorn api.server:app --reload
+make web            # terminal 2 — cd web && npm install && npm run dev
+
+# Production-style: build the SPA so FastAPI serves it at :8000
+make web-build && make api        # open http://localhost:8000
+
+# One deployable container (deploy to Render / Fly / Railway / any Docker host)
+make docker                       # docker build -t intelligent-forecast .
+docker run -p 8000:8000 -e ANTHROPIC_API_KEY=sk-... intelligent-forecast
+```
+
+Full deployment guide (env vars, managed hosts): [`DEPLOY.md`](DEPLOY.md). The
+dashboard works fully **without** a key — the agent bar just falls back to
+deterministic answers. A lightweight **Streamlit** view (`make app`) is kept as
+a secondary/portfolio UI (see [The UI](#the-ui)).
 
 ## How the rules map to MEDDPICC
 
@@ -148,6 +185,13 @@ sales_forecast/
 │   ├── mcp_client.py           # stdio client + Anthropic tool bridge
 │   ├── attainment.py           # one agent per region + portfolio roll-up
 │   └── sales_guru.py           # coach a deal / prioritize a region's VP worklist
+├── api/                        # FastAPI backend for the web dashboard
+│   ├── forecast.py             # shape the scored pipeline into the UI payload
+│   ├── agents_web.py           # agent-bar routing + answers (deterministic / LLM)
+│   └── server.py               # FastAPI app: JSON API + serves the built SPA
+├── web/                        # React + Vite dashboard (the Intelligent Forecast UI)
+│   ├── index.html · vite.config.js · package.json
+│   └── src/                    # App.jsx, tokens.js, api.js, components/*
 ├── tests/
 │   ├── test_rules.py           # a firing row + a clean row per rule
 │   ├── test_signals.py         # fast-mover / complex-deal signal classifiers
@@ -155,10 +199,12 @@ sales_forecast/
 │   ├── test_mcp_tools.py       # each MCP tool called directly
 │   ├── test_periods.py         # period math, history rollups, comparisons
 │   ├── test_agents.py          # baseline math + stdio round-trip + agent loop
-│   └── test_sales_guru.py      # guru fallbacks + deal/region agent loops
-├── app.py                      # Streamlit two-mode UI
+│   ├── test_sales_guru.py      # guru fallbacks + deal/region agent loops
+│   └── test_api.py             # forecast payload + agent routing + endpoints
+├── app.py                      # Streamlit two-mode UI (secondary/portfolio view)
 ├── mcp_server.py               # FastMCP server exposing the detector to agents
 ├── demo.py                     # one-command offline walkthrough (make demo)
+├── Dockerfile · DEPLOY.md      # one-container build + deployment guide
 ├── EXAMPLES.md                 # agent questions → tool calls
 └── Makefile
 ```
@@ -175,9 +221,11 @@ sales_forecast/
 - **`mcp_server.py`** — read-only MCP tools that wrap `engine`/`evaluate` so an
   agent can query the pipeline conversationally. Zero LLM calls in any tool.
 
-## The UI
+## The Streamlit view (secondary)
 
-`make app` opens a two-mode Streamlit app:
+Alongside the primary [web dashboard](#web-dashboard-intelligent-forecast), a
+lightweight Streamlit app is kept for quick data exploration and "bring your own
+CSV" — `make app` opens a two-mode Streamlit app:
 
 - **Demo (portfolio):** scores the bundled labeled CSV, shows the eval scorecard
   up top (so a reviewer immediately sees it works against ground truth), then a

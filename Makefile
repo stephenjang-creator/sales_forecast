@@ -1,4 +1,4 @@
-.PHONY: data history test eval eval-region app mcp attainment attainment-dry guru guru-dry guru-chat demo
+.PHONY: data history test eval eval-region app mcp attainment attainment-dry guru guru-dry guru-chat demo api web web-build docker
 
 # Regenerate the bundled datasets (already committed; only needed to reseed).
 data: history
@@ -57,3 +57,20 @@ guru-chat:
 # signals -> region forecast, all deterministic (no key). Windows: python demo.py
 demo:
 	python demo.py
+
+# --- Intelligent Forecast web dashboard (React SPA + FastAPI) ---------------
+# Backend API (also serves web/dist if it's been built). http://localhost:8000
+api:
+	uvicorn api.server:app --reload --port 8000
+
+# Frontend dev server with hot reload (proxies /api to :8000). http://localhost:5173
+web:
+	cd web && npm install && npm run dev
+
+# Build the SPA to web/dist so the API serves it in production.
+web-build:
+	cd web && npm install && npm run build
+
+# Build the deployable container (FastAPI + built SPA). See DEPLOY.md.
+docker:
+	docker build -t intelligent-forecast .

@@ -7,7 +7,11 @@ streamlit>=1.30
 # MCP server (agent access to the detector)
 mcp>=1.0
 
-# Optional LLM briefs (narrative.py degrades gracefully if unused)
+# Web API (Intelligent Forecast dashboard backend)
+fastapi>=0.110
+uvicorn[standard]>=0.29
+
+# Optional LLM briefs + agent answers (degrade gracefully with no key)
 anthropic>=0.40
 
 # Dev
