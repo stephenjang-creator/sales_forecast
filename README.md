@@ -360,18 +360,29 @@ flag; the plays *respond* to the flags the rules already set.
   sharpened next steps, the right owner.
 - **Prioritize a region** (`--region NA` / `--all`): reads `region_top_actions`
   and gives the VP their **top N things to do today** (default 3), ranked. Each
-  action is **one play that can cover several deals** — "pull these 22 fast movers
-  forward ($935K)", "run a MEDDPICC call on these 13 Commit deals". Ranking favors
-  **bottom-of-funnel, well-championed deals** (a few steps from close) and **fast
-  movers**: weight = urgency × funnel-depth(stage) × champion-boost (all tunable
-  in `config.py`). It also splits the VP's two levers — the actions are plays to
-  **delegate to managers via a note** (they scale), plus a short, capped
-  **`vp_should_join_calls`** shortlist of senior-stakeholder deals (VP+/C-suite
-  champion) for the VP to **personally join** (calls are scarce).
+  action is **one play that can cover several deals**, and deals are named the way
+  reps think — **company + MRR**, a few of the most-actionable accounts, with the
+  rest summarized by dollar value (never a wall of ids):
+
+  ```
+  1. ⚡ Pull it forward and close — 22 deals · $77,920/mo   [rep]
+     • Soylent Group ($3,990/mo) — Negotiation
+     • Nakatomi Labs ($3,630/mo) — Negotiation
+     • …plus 17 more ($58,830/mo)
+  ☎ Join these calls yourself (VP time is scarce):
+     • Acme Group ($6,930/mo): VP champion engaged — Reset the close plan
+  ```
+
+  Ranking favors **bottom-of-funnel, well-championed deals** (a few steps from
+  close) and **fast movers**: weight = urgency × funnel-depth(stage) ×
+  champion-boost (all tunable in `config.py`). It also splits the VP's two levers —
+  the actions are plays to **delegate to managers via a note** (they scale), plus a
+  short, capped **`vp_should_join_calls`** shortlist of senior-stakeholder deals
+  (VP+/C-suite champion) for the VP to **personally join** (calls are scarce).
 - **Chat** (`--chat`): an interactive session with every detector tool. Ask
   _"what are my top 3 things in NA?"_ and then keep prompting — _"tell me more
-  about #2"_, _"who owns the first one?"_, _"assess D-10339"_ — the conversation
-  persists, so follow-ups build on what came before.
+  about #2"_, _"who owns the Acme deal?"_, _"assess Umbra Solutions"_ — the
+  conversation persists, so follow-ups build on what came before.
 
 ```bash
 export ANTHROPIC_API_KEY=sk-...

@@ -152,6 +152,18 @@ def _firmographics(row: pd.Series) -> dict:
     }
 
 
+def _deal_label(row: pd.Series) -> str:
+    """A rep-friendly deal label: company + monthly recurring revenue.
+
+    Salespeople think in accounts and MRR, not opportunity ids -- every tool
+    that surfaces a deal carries this alongside the deal_id so any consumer (the
+    guru, the UI, an agent) can lead with "Acme Group ($8,200/mo)".
+    """
+    account = str(row["account"])
+    mrr = _opt_num(row, "mrr", float)
+    return f"{account} (${mrr:,.0f}/mo)" if mrr is not None else account
+
+
 def _signal_ids(row: pd.Series) -> list[str]:
     """The signal ids fired for a row (fast_mover / complex_deal)."""
     return [s.signal_id for s in row["signals"]] if "signals" in row else []
@@ -162,6 +174,7 @@ def _compact_deal(row: pd.Series) -> dict:
     return {
         "deal_id": str(row["deal_id"]),
         "account": str(row["account"]),
+        "label": _deal_label(row),
         "region": _region_of(row),
         "segment": str(row["segment"]),
         "industry": _opt_str(row, "industry"),
@@ -532,6 +545,8 @@ def recommend_plays(deal_id: str, region_aware: bool = False) -> dict:
         return {
             "deal_id": str(row["deal_id"]),
             "account": str(row["account"]),
+            "label": _deal_label(row),
+            "mrr": _opt_num(row, "mrr", float),
             "region": _region_of(row),
             "stage": str(row["stage"]),
             "forecast_category": str(row["forecast_category"]),
@@ -614,10 +629,12 @@ def _deal_priority_weight(row: pd.Series, kind: str, severity: str) -> float:
 
 
 def _action_deal(row: pd.Series, reason: str) -> dict:
-    """One deal under a grouped action: identity + why it's on the list."""
+    """One deal under a grouped action: rep-friendly identity + why it's listed."""
     return {
         "deal_id": str(row["deal_id"]),
         "account": str(row["account"]),
+        "label": _deal_label(row),
+        "mrr": _opt_num(row, "mrr", float),
         "stage": str(row["stage"]),
         "forecast_category": str(row["forecast_category"]),
         "arr": float(row["arr"]),
@@ -700,6 +717,8 @@ def region_top_actions(region: str, region_aware: bool = False, top_n: int = 3) 
                     {
                         "deal_id": str(row["deal_id"]),
                         "account": str(row["account"]),
+                        "label": _deal_label(row),
+                        "mrr": _opt_num(row, "mrr", float),
                         "stage": str(row["stage"]),
                         "arr": float(row["arr"]),
                         "champion_seniority": _opt_str(row, "champion_seniority"),
@@ -726,6 +745,7 @@ def region_top_actions(region: str, region_aware: bool = False, top_n: int = 3) 
                     "owner": play.owner,
                     "deal_count": len(deals),
                     "arr_at_stake": round(sum(d["arr"] for d in deals), 0),
+                    "mrr_at_stake": round(sum(d["mrr"] or 0.0 for d in deals), 0),
                     "priority_score": round(g["score"], 0),
                     "deals": deals,
                 }

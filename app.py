@@ -143,9 +143,11 @@ def render_flagged(scored: pd.DataFrame, use_narrative: bool) -> None:
     st.markdown("#### Deal detail")
     for _, row in view.iterrows():
         region_bit = f"{row['region']} · " if has_region else ""
+        mrr_bit = f" · ${int(row['mrr']):,}/mo" if pd.notna(row.get("mrr")) else ""
+        # Lead with company + MRR (how reps think); keep the id as a quiet suffix.
         header = (
-            f"{row['deal_id']} · {row['account']} · {region_bit}{row['stage']} · "
-            f"risk {row['risk_score']}"
+            f"{row['account']}{mrr_bit} · {region_bit}{row['stage']} · "
+            f"risk {row['risk_score']} · {row['deal_id']}"
         )
         with st.expander(header):
             if "industry" in row.index:

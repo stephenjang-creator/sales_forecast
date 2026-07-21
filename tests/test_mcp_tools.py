@@ -35,6 +35,7 @@ def test_list_deals_shape_and_cap() -> None:
     expected = {
         "deal_id",
         "account",
+        "label",
         "region",
         "segment",
         "industry",
@@ -49,6 +50,8 @@ def test_list_deals_shape_and_cap() -> None:
         "top_reason",
     }
     assert set(deals[0].keys()) == expected
+    # Rep-friendly label: company + MRR, e.g. "Acme Group ($3,990/mo)".
+    assert deals[0]["account"] in deals[0]["label"] and "/mo)" in deals[0]["label"]
     json.dumps(deals)  # must be JSON-serializable
 
 
@@ -86,6 +89,7 @@ def test_recommend_plays_for_flagged_deal() -> None:
     deal_id = _a_flagged_deal_id()
     result = srv.recommend_plays(deal_id)
     assert result["deal_id"] == deal_id
+    assert result["account"] in result["label"]  # rep-friendly company + MRR label
     assert result["hits"], "a flagged deal must carry hits"
     assert result["plays"], "a flagged deal must get at least one play"
     play = result["plays"][0]
@@ -117,9 +121,11 @@ def test_region_top_actions_grouped_and_ranked() -> None:
         assert a["deals"], "an action must cover at least one deal"
         # arr_at_stake is the sum of the covered deals' ARR.
         assert abs(a["arr_at_stake"] - round(sum(d["arr"] for d in a["deals"]), 0)) < 1.0
-        assert {"title", "first_step", "owner"} <= set(a.keys())
+        assert {"title", "first_step", "owner", "mrr_at_stake"} <= set(a.keys())
         for deal in a["deals"]:
-            assert {"champion_seniority", "good_champion"} <= set(deal.keys())
+            # Rep-friendly: every deal carries a company + MRR label.
+            assert {"champion_seniority", "good_champion", "label", "mrr"} <= set(deal.keys())
+            assert deal["account"] in deal["label"]
     json.dumps(plan)
 
 
@@ -135,7 +141,7 @@ def test_region_top_actions_vp_call_shortlist_is_capped_and_senior() -> None:
     calls = plan["vp_should_join_calls"]
     assert len(calls) <= config.VP_CALL_CAPACITY  # calls are scarce
     for c in calls:
-        assert {"deal_id", "stakeholder", "move", "arr"} <= set(c.keys())
+        assert {"deal_id", "stakeholder", "move", "arr", "label", "mrr"} <= set(c.keys())
         assert c["stakeholder"], "a call-worthy deal names its senior stakeholder"
 
 

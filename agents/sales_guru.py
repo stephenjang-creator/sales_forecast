@@ -53,6 +53,9 @@ from agents.mcp_client import (
 DEFAULT_MODEL = os.environ.get("FORECAST_AGENT_MODEL", "claude-sonnet-4-6")
 MAX_ITERS = 6
 MAX_TOKENS = 1500
+# How many named deals to show per action before summarizing the rest as an
+# aggregate. Reps want a few specific accounts to act on, not a wall of ids.
+DEALS_SHOWN = 5
 
 # --------------------------------------------------------------------------- #
 # Structured "submit" tools -- force a clean, grounded final answer.
@@ -98,22 +101,32 @@ _ACTION_ITEM = {
         "action": {"type": "string", "description": "The move, as an imperative."},
         "why": {"type": "string", "description": "The risk removed / opportunity taken."},
         "owner": {"type": "string"},
-        "deals": {
+        "deal_count": {"type": "integer", "description": "How many deals this action covers."},
+        "mrr_at_stake": {"type": "number", "description": "Combined MRR of the covered deals."},
+        "top_deals": {
             "type": "array",
             "items": {"type": "string"},
-            "description": "The deal_ids this one action covers.",
+            "description": (
+                "The few (~5 max) most-actionable accounts, each as company + MRR "
+                "(+ stage), e.g. 'Acme Group ($8,200/mo) — Negotiation'. Never a "
+                "deal_id."
+            ),
+        },
+        "more": {
+            "type": "string",
+            "description": "Aggregate for deals beyond top_deals, e.g. 'plus 12 more ($40k/mo)'.",
         },
     },
-    "required": ["priority", "action", "deals"],
+    "required": ["priority", "action", "top_deals"],
 }
 
 _CALL_ITEM = {
     "type": "object",
     "properties": {
-        "deal_id": {"type": "string"},
+        "deal": {"type": "string", "description": "Company + MRR, e.g. 'Acme Group ($8,200/mo)'."},
         "why": {"type": "string", "description": "Why the VP should personally join this call."},
     },
-    "required": ["deal_id", "why"],
+    "required": ["deal", "why"],
 }
 
 _SUBMIT_ACTIONS = {
@@ -121,10 +134,13 @@ _SUBMIT_ACTIONS = {
     "description": (
         "Submit the regional VP's prioritized worklist. Call exactly once, after "
         "reading region_top_actions. `actions` are plays the VP DELEGATES to "
-        "managers via a note (one move may cover several deals). `calls_to_join` "
-        "is the short list of deals the VP should personally join a call on -- use "
-        "only the deals region_top_actions put in vp_should_join_calls. Keep "
-        "actions in priority order and use only the deals the tool returned."
+        "managers via a note (one move may cover several deals): for each, list "
+        "only the top ~5 accounts in top_deals (by company + MRR, from the tool's "
+        "deals[].label, most-actionable first) and summarize the rest in `more`. "
+        "`calls_to_join` is the short list of deals the VP should personally join a "
+        "call on -- use only region_top_actions' vp_should_join_calls, named by "
+        "company + MRR. Keep actions in priority order; use only the deals the tool "
+        "returned; never show a deal_id."
     ),
     "input_schema": {
         "type": "object",
@@ -145,10 +161,11 @@ _DEAL_SYSTEM = (
     "recommendation in the MCP tools: assess_deal gives the risk picture and "
     "MEDDPICC scores, recommend_plays gives the deterministic plays mapped from "
     "the deal's flags. Personalize those plays to THIS deal -- sharpen the next "
-    "steps, name the owner, and write a talk track for the next call. You never "
-    "change a flag and never invent a deal, contact, or number the tools did not "
-    "return; you respond to the flags the detector set. When finished, call "
-    "submit_coaching exactly once."
+    "steps, name the owner, and write a talk track for the next call. Refer to the "
+    "deal by its COMPANY and MRR (assess_deal's label / account + mrr), not the "
+    "deal_id. You never change a flag and never invent a deal, contact, or number "
+    "the tools did not return; you respond to the flags the detector set. When "
+    "finished, call submit_coaching exactly once."
 )
 
 _REGION_SYSTEM = (
@@ -162,9 +179,11 @@ _REGION_SYSTEM = (
     "and name the deals it covers. The `vp_should_join_calls` list is the handful "
     "of deals the VP should personally join a call on (calls are scarce, so it's "
     "short and skews to senior-stakeholder deals); pass those through as "
-    "calls_to_join. Lead with the highest-leverage action. Use only the deals the "
-    "tool returned; never invent a deal or number. When finished, call "
-    "submit_region_actions exactly once."
+    "calls_to_join. Lead with the highest-leverage action. Always name deals by "
+    "COMPANY and MRR (the tool's deals[].label, e.g. 'Acme Group ($8,200/mo)') -- "
+    "never a deal_id -- and for each action list only the top ~5 accounts, "
+    "summarizing the rest in `more`. Use only the deals the tool returned; never "
+    "invent a deal or number. When finished, call submit_region_actions once."
 )
 
 _CHAT_SYSTEM = (
@@ -176,16 +195,30 @@ _CHAT_SYSTEM = (
     "list_deals / assess_region / signals_summary (browse and roll up). Ground "
     "every answer in the tools; the deterministic rules own every flag -- you "
     "explain and recommend the play, you never change a flag or invent a deal, "
-    "contact, or number the tools did not return. Be concise and specific: name "
-    "deals, say the move, and when you list priorities keep them in the tool's "
-    "ranked order. It's fine to call several tools before answering, and to ask "
-    "a clarifying question (e.g. which region) when you need one."
+    "contact, or number the tools did not return. Be concise and specific. Always "
+    "refer to a deal by its COMPANY and MRR (the tools' label / account + mrr, "
+    "e.g. 'Acme Group ($8,200/mo)'), never a deal_id -- that's how reps think. "
+    "When you list priorities keep them in the tool's ranked order, and show a few "
+    "named accounts rather than a long dump. It's fine to call several tools before "
+    "answering, and to ask a clarifying question (e.g. which region) when needed."
 )
 
 
 # --------------------------------------------------------------------------- #
 # Deterministic fallbacks (also the --dry-run output): no LLM, tools only.
 # --------------------------------------------------------------------------- #
+def _deal_headline(assessment: dict, deal_id: str) -> dict:
+    """Rep-friendly identity for a deal: company + MRR (falls back to deal_id)."""
+    account = assessment.get("account")
+    mrr = assessment.get("mrr")
+    label = assessment.get("label")
+    if not label:
+        label = (
+            f"{account} (${mrr:,.0f}/mo)" if account and mrr is not None else (account or deal_id)
+        )
+    return {"deal_id": deal_id, "account": account, "mrr": mrr, "label": label}
+
+
 def _deterministic_coaching(ctx: dict) -> dict:
     """Coaching straight from the plays tool -- the offline / fallback answer."""
     plays_payload = ctx.get("plays") or {}
@@ -193,7 +226,7 @@ def _deterministic_coaching(ctx: dict) -> dict:
     plays = plays_payload.get("plays", []) if isinstance(plays_payload, dict) else []
     top = plays[0] if plays else None
     return {
-        "deal_id": ctx["deal_id"],
+        **_deal_headline(assessment, ctx["deal_id"]),
         "summary": (
             assessment.get("hits", [{}])[0].get("reason", "No open risk flags.")
             if assessment.get("hits")
@@ -207,12 +240,29 @@ def _deterministic_coaching(ctx: dict) -> dict:
     }
 
 
+def _deal_line(deal: dict) -> str:
+    """'Acme Group ($8,200/mo) — Negotiation' from a tool deal dict."""
+    label = deal.get("label") or deal.get("account") or deal.get("deal_id", "")
+    stage = deal.get("stage")
+    return f"{label} — {stage}" if stage else str(label)
+
+
 def _deterministic_actions(plan: dict) -> dict:
-    """Region worklist straight from region_top_actions -- offline / fallback."""
+    """Region worklist straight from region_top_actions -- offline / fallback.
+
+    Shows a few named accounts (company + MRR) per action, most-actionable first,
+    then summarizes the rest as an aggregate ("plus N more, $X/mo") -- never a
+    bare id dump.
+    """
     tool_actions = plan.get("actions", []) if isinstance(plan, dict) else []
     actions = []
     for a in tool_actions:
-        deals = [d["deal_id"] for d in a.get("deals", [])]
+        deals = a.get("deals", [])
+        shown, rest = deals[:DEALS_SHOWN], deals[DEALS_SHOWN:]
+        more = None
+        if rest:
+            rest_mrr = sum((d.get("mrr") or 0.0) for d in rest)
+            more = f"plus {len(rest)} more (${rest_mrr:,.0f}/mo)"
         actions.append(
             {
                 "priority": a["priority"],
@@ -221,19 +271,22 @@ def _deterministic_actions(plan: dict) -> dict:
                 "owner": a.get("owner", ""),
                 "kind": a.get("kind", ""),
                 "deal_count": a.get("deal_count", len(deals)),
-                "arr_at_stake": a.get("arr_at_stake"),
-                "deals": deals,
+                "mrr_at_stake": a.get("mrr_at_stake"),
+                "top_deals": [_deal_line(d) for d in shown],
+                "more": more,
             }
         )
     if actions:
         top = actions[0]
-        headline = (
-            f"{top['action']} — {top['deal_count']} deal(s), ${top['arr_at_stake']:,.0f} at stake."
-        )
+        mrr = top.get("mrr_at_stake") or 0.0
+        headline = f"{top['action']} — {top['deal_count']} deals · ${mrr:,.0f}/mo"
     else:
         headline = "No open priorities in this region."
     calls = [
-        {"deal_id": c["deal_id"], "why": f"{c['stakeholder']} — {c['move']}"}
+        {
+            "deal": c.get("label") or c.get("account") or c["deal_id"],
+            "why": f"{c['stakeholder']} — {c['move']}",
+        }
         for c in (plan.get("vp_should_join_calls", []) if isinstance(plan, dict) else [])
     ]
     return {
@@ -311,7 +364,7 @@ async def _run_deal_guru(
         "Personalize these plays to this deal, add a talk track for the next "
         "call, then call submit_coaching."
     )
-    return await _drive(
+    result = await _drive(
         client,
         session,
         model,
@@ -320,6 +373,8 @@ async def _run_deal_guru(
         _SUBMIT_COACHING,
         _deterministic_coaching(ctx),
     )
+    # Ensure a rep-friendly company + MRR header regardless of the LLM's output.
+    return {**_deal_headline(assessment, deal_id), **result}
 
 
 async def _run_region_guru(
@@ -484,11 +539,12 @@ async def chat(model: str, csv_path: str | None, region_aware: bool, opener: str
 # CLI
 # --------------------------------------------------------------------------- #
 def _print_coaching(c: dict) -> None:
+    label = c.get("label") or c.get("account") or c.get("deal_id", "")
     if c.get("error"):
-        print(f"  {c.get('deal_id', '')}: {c['error']}")
+        print(f"  {label}: {c['error']}")
         return
     print("=" * 72)
-    print(f"  SALES GURU — {c['deal_id']}")
+    print(f"  SALES GURU — {label}")
     print("=" * 72)
     print(f"  {c.get('summary', '')}")
     for i, play in enumerate(c.get("plays", []), 1):
@@ -502,13 +558,6 @@ def _print_coaching(c: dict) -> None:
         print(f"  → {c['rationale']}")
 
 
-def _fmt_deal_list(deals: list[str], limit: int = 6) -> str:
-    """'D-1, D-2, D-3 (+4 more)' from a list of deal ids."""
-    shown = ", ".join(deals[:limit])
-    extra = len(deals) - limit
-    return f"{shown} (+{extra} more)" if extra > 0 else shown
-
-
 def _print_priorities(p: dict) -> None:
     if p.get("error"):
         print(f"\n  {p.get('region', '')}: {p['error']}")
@@ -517,20 +566,23 @@ def _print_priorities(p: dict) -> None:
     for a in p.get("actions", []):
         tag = "⚡" if a.get("kind") == "opportunity" else "⚠"
         stake = ""
-        if a.get("arr_at_stake") is not None:
-            count = a.get("deal_count", len(a["deals"]))
-            stake = f" — {count} deals, ${a['arr_at_stake']:,.0f} at stake"
+        if a.get("mrr_at_stake") is not None:
+            count = a.get("deal_count", len(a.get("top_deals", [])))
+            stake = f" — {count} deals · ${a['mrr_at_stake']:,.0f}/mo"
         owner = f"  [{a['owner']}]" if a.get("owner") else ""
         print(f"    {a['priority']}. {tag} {a['action']}{stake}{owner}")
         if a.get("why"):
             print(f"       ↳ {a['why']}")
-        if a.get("deals"):
-            print(f"       notify managers on: {_fmt_deal_list(a['deals'])}")
+        for deal in a.get("top_deals", []):
+            print(f"       • {deal}")
+        if a.get("more"):
+            print(f"       • …{a['more']}")
     calls = p.get("calls_to_join", [])
     if calls:
         print("    ☎ Join these calls yourself (VP time is scarce):")
         for c in calls:
-            print(f"       • {c['deal_id']}: {c['why']}")
+            name = c.get("deal") or c.get("deal_id", "")
+            print(f"       • {name}: {c['why']}")
 
 
 def _print_region_report(result: dict) -> None:

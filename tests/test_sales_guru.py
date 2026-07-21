@@ -76,32 +76,76 @@ def test_deterministic_actions_from_top_actions() -> None:
                 "first_step": "confirm paper process",
                 "owner": "rep",
                 "deal_count": 2,
-                "arr_at_stake": 150000,
-                "deals": [{"deal_id": "D-9"}, {"deal_id": "D-4"}],
-            },
-            {
-                "priority": 2,
-                "kind": "risk",
-                "title": "Close the MEDDPICC gaps",
-                "first_step": "qualify",
-                "owner": "rep + manager",
-                "deal_count": 1,
-                "arr_at_stake": 60000,
-                "deals": [{"deal_id": "D-8"}],
+                "mrr_at_stake": 12500,
+                "deals": [
+                    {
+                        "deal_id": "D-9",
+                        "label": "Acme ($8,000/mo)",
+                        "mrr": 8000,
+                        "stage": "Negotiation",
+                    },
+                    {
+                        "deal_id": "D-4",
+                        "label": "Globex ($4,500/mo)",
+                        "mrr": 4500,
+                        "stage": "Proposal",
+                    },
+                ],
             },
         ],
         "vp_should_join_calls": [
-            {"deal_id": "D-9", "stakeholder": "VP champion engaged", "move": "Pull forward"}
+            {
+                "deal_id": "D-9",
+                "label": "Acme ($8,000/mo)",
+                "stakeholder": "VP champion engaged",
+                "move": "Pull forward",
+            }
         ],
     }
     out = _deterministic_actions(plan)
     assert out["region"] == "NA"
     assert "Pull it forward and close" in out["headline"]  # leads with #1
-    assert out["actions"][0]["action"] == "Pull it forward and close"
-    assert out["actions"][0]["deals"] == ["D-9", "D-4"]  # one action, many deals
-    assert out["actions"][1]["deals"] == ["D-8"]
-    # VP-personal calls carry through as a short, separate list.
-    assert out["calls_to_join"] == [{"deal_id": "D-9", "why": "VP champion engaged — Pull forward"}]
+    a = out["actions"][0]
+    assert a["action"] == "Pull it forward and close"
+    # Deals are named by company + MRR (+ stage), not deal_id.
+    assert a["top_deals"] == ["Acme ($8,000/mo) — Negotiation", "Globex ($4,500/mo) — Proposal"]
+    assert a["more"] is None  # only 2 deals, nothing to summarize
+    # VP-personal calls carry through, named by company + MRR.
+    assert out["calls_to_join"] == [
+        {"deal": "Acme ($8,000/mo)", "why": "VP champion engaged — Pull forward"}
+    ]
+
+
+def test_deterministic_actions_summarizes_the_tail() -> None:
+    # More than DEALS_SHOWN deals -> a few named, the rest aggregated by MRR.
+    deals = [
+        {
+            "deal_id": f"D-{i}",
+            "label": f"Co{i} (${1000 + i}/mo)",
+            "mrr": 1000 + i,
+            "stage": "Proposal",
+        }
+        for i in range(8)
+    ]
+    plan = {
+        "region": "NA",
+        "actions": [
+            {
+                "priority": 1,
+                "kind": "risk",
+                "title": "Reset the plan",
+                "first_step": "rebuild MAP",
+                "owner": "rep + manager",
+                "deal_count": 8,
+                "mrr_at_stake": 8028,
+                "deals": deals,
+            }
+        ],
+    }
+    a = _deterministic_actions(plan)["actions"][0]
+    assert len(a["top_deals"]) == 5  # DEALS_SHOWN
+    assert a["more"].startswith("plus 3 more")  # 8 - 5
+    assert "/mo)" in a["more"]  # remainder carries a dollar value, not a bare count
 
 
 def test_deterministic_actions_empty_region() -> None:
@@ -227,9 +271,11 @@ class _ActionsClient:
                                 "action": "Pull forward and close",
                                 "why": "empowered champions, simple process",
                                 "owner": "rep",
-                                "deals": ["D-1", "D-2"],
+                                "top_deals": ["Acme ($8,000/mo)", "Globex ($4,500/mo)"],
+                                "more": "plus 5 more ($20,000/mo)",
                             }
                         ],
+                        "calls_to_join": [{"deal": "Acme ($8,000/mo)", "why": "VP champion"}],
                         "rationale": "grounded",
                     },
                     id="t2",
@@ -246,7 +292,9 @@ def test_run_region_guru_dispatches_and_submits() -> None:
     result = asyncio.run(_run())
     assert result["region"] == "NA"
     assert result["headline"] == "Close the fast movers first"
-    assert result["actions"][0]["deals"] == ["D-1", "D-2"]  # one action, many deals
+    # Deals are named by company + MRR, not deal_id.
+    assert result["actions"][0]["top_deals"][0] == "Acme ($8,000/mo)"
+    assert result["calls_to_join"][0]["deal"] == "Acme ($8,000/mo)"
     assert not result.get("_fallback")
 
 

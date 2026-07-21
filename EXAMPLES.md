@@ -188,10 +188,12 @@ seed 42); yours will differ if you point `FORECAST_CSV` at your own export.
   short, capped list (`config.VP_CALL_CAPACITY`) of **senior-stakeholder** deals
   (VP+/C-suite champion, or a C-suite approver) for the VP to **personally join**,
   because calls are scarce.
-- **Narration tip:** lead with action #1 as an imperative ("Close these 22 fast
-  movers — $935K"); tell the VP which managers to notify vs. which few calls to
-  join themselves. It's a worklist, **not** an attainment forecast — pair with
-  `bookings_rollup` for the number.
+- **Narration tip:** name deals the way reps do — **company + MRR** (each deal
+  carries a `label` like `Acme Group ($6,930/mo)`), showing a few of the most
+  actionable accounts and summarizing the rest by dollar value, never a list of
+  ids. Lead with action #1 as an imperative; tell the VP which managers to notify
+  vs. which few calls to join themselves. It's a worklist, **not** an attainment
+  forecast — pair with `bookings_rollup` for the number.
 - **Run the agent:** `python -m agents.sales_guru --region NA` (or `--all`), or
   add `--dry-run` for the deterministic worklist with no key.
 
