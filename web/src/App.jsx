@@ -96,6 +96,7 @@ export default function App() {
         {tab === "deals" ? (
           <DealsTab
             deals={data.deals}
+            bookedDeals={data.bookedDeals || []}
             regionOrder={data.regionOrder}
             filters={filters}
             setFilters={setFilters}

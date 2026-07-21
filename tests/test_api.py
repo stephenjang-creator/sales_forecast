@@ -19,7 +19,7 @@ def test_full_payload_shape() -> None:
     p = forecast.full_payload()
     assert p["regionOrder"] == ["NA", "EMEA", "APAC", "LATAM"]
     assert p["deals"], "expected flagged deals"
-    assert len(p["kpis"]) == 4
+    assert len(p["kpis"]) == 5  # booked + flagged + at-risk + critical + top-region
     assert p["narrative"]
     assert len(p["scorecard"]["metrics"]) == 4
     assert len(p["scorecard"]["perRule"]) == 6
@@ -69,19 +69,33 @@ def test_sort_ranks_are_present_and_ordered() -> None:
     assert config.FORECAST_ORDER["Commit"] < config.FORECAST_ORDER["Omitted"]
 
 
-def test_closed_deals_carry_closed_forecast() -> None:
+def test_closed_forecast_categories() -> None:
     import pandas as pd
 
     from api.forecast import _csv_path
 
     df = pd.read_csv(_csv_path())
-    closed = df[df["stage"].isin(["Closed Won", "Closed Lost"])]
-    assert not closed.empty
-    assert (closed["forecast_category"] == "Closed").all()
+    # Closed Won is booked -> "Closed"; Closed Lost is dropped from the rollup
+    # -> "Omitted".
+    won = df[df["stage"] == "Closed Won"]
+    lost = df[df["stage"] == "Closed Lost"]
+    assert not won.empty and not lost.empty
+    assert (won["forecast_category"] == "Closed").all()
+    assert (lost["forecast_category"] == "Omitted").all()
     # Reps only call a deal Best Case at Proposal+ and Commit at Negotiation:
     # no healthy early-stage deal should be Best Case.
     early = df[df["stage"].isin(["Discovery", "Qualification"])]
     assert (early["forecast_category"] != "Best Case").all()
+
+
+def test_booked_deals_have_no_risk() -> None:
+    booked = forecast.booked_deals()
+    assert booked, "expected Closed Won deals"
+    for d in booked:
+        assert d["stage"] == "Closed Won"
+        assert d["fc"] == "Closed"
+        assert d["closed"] is True
+        assert d["risk"] == 0 and d["rules"] == []
 
 
 def test_deals_are_flagged_and_sorted() -> None:
@@ -94,7 +108,7 @@ def test_deals_are_flagged_and_sorted() -> None:
 def test_scorecard_matches_detector() -> None:
     sc = forecast.scorecard()
     labels = {m["label"]: m["value"] for m in sc["metrics"]}
-    assert labels["F1"] == "0.835"  # region-agnostic, matches the model-health tab
+    assert labels["F1"] == "0.847"  # region-agnostic, matches the model-health tab
 
 
 def test_agent_routing() -> None:

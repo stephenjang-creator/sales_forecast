@@ -5,6 +5,11 @@ const GRID = "74px minmax(170px,1.5fr) 136px 118px 116px 100px 112px";
 const TIERS = ["Critical", "High", "Medium", "Low"];
 const SEGMENTS = ["Enterprise", "Mid-Market", "SMB"];
 
+const FORECAST_INFO =
+  "Forecast rollup, most-committed first — Closed (Won, booked) › Commit " +
+  "(only at Negotiation) › Best Case (only at Proposal+) › Pipeline (in the funnel) " +
+  "› Omitted (early or lost — left out of the number).";
+
 // Columns, in table order. `key` maps into SORT_KEYS below; `align` right-aligns ARR.
 const COLUMNS = [
   { key: "risk", label: "Risk", align: "left" },
@@ -12,7 +17,7 @@ const COLUMNS = [
   { key: "owner", label: "Opportunity owner", align: "left" },
   { key: "manager", label: "Sales manager", align: "left" },
   { key: "stage", label: "Stage", align: "left" },
-  { key: "fc", label: "Forecast", align: "left" },
+  { key: "fc", label: "Forecast", align: "left", info: FORECAST_INFO },
   { key: "arr", label: "ARR", align: "right" },
 ];
 
@@ -210,6 +215,87 @@ function Cell({ text }) {
   );
 }
 
+// A booked Closed Won deal: light-green, no risk score, no action. Static (no
+// hover peek, no drawer) because there's nothing left to do on it.
+function ClosedRow({ deal }) {
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: GRID,
+        alignItems: "center",
+        padding: "11px 16px",
+        borderBottom: `1px solid ${C.hairline}`,
+        background: C.closedBg,
+      }}
+    >
+      <div style={{ display: "inline-flex", alignItems: "center", gap: 9, width: "fit-content" }}>
+        <div style={{ width: 4, height: 28, borderRadius: 3, background: C.closedBorder }} />
+        <div
+          title="Closed Won — booked, no risk"
+          style={{
+            minWidth: 30,
+            height: 26,
+            padding: "0 7px",
+            borderRadius: 7,
+            background: "oklch(0.91 0.09 155)",
+            color: C.closedText,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontWeight: 700,
+            fontSize: 14,
+          }}
+        >
+          ✓
+        </div>
+      </div>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+          <span
+            style={{
+              fontSize: 13.5,
+              fontWeight: 600,
+              color: C.text2,
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            {deal.account}
+          </span>
+          <span style={{ fontSize: 12, fontWeight: 500, color: "oklch(0.5 0.012 260)", fontFamily: MONO, flexShrink: 0 }}>
+            {deal.mrrStr}
+          </span>
+        </div>
+        <div style={{ fontSize: 11, color: C.closedText, fontFamily: MONO, marginTop: 1 }}>
+          {deal.id} · Closed Won
+        </div>
+      </div>
+      <Cell text={deal.owner} />
+      <Cell text={deal.manager} />
+      <div style={{ fontSize: 12.5, color: C.cell }}>{deal.stage}</div>
+      <div>
+        <span
+          style={{
+            fontSize: 11,
+            fontWeight: 600,
+            padding: "3px 9px",
+            borderRadius: 6,
+            background: "oklch(0.9 0.09 155)",
+            color: C.closedText,
+          }}
+        >
+          Closed
+        </span>
+      </div>
+      <div style={{ textAlign: "right", fontSize: 13.5, fontWeight: 600, color: "oklch(0.26 0.014 262)", fontFamily: MONO }}>
+        {deal.amountStr}
+      </div>
+    </div>
+  );
+}
+
 // A clickable, sortable column header. Shows ▲/▼ on the active column and a faint
 // ↕ on the rest so every column reads as sortable.
 function SortHeader({ col, sort, onSort }) {
@@ -243,6 +329,15 @@ function SortHeader({ col, sort, onSort }) {
       {right && <span>{col.label}</span>}
       <span style={{ fontSize: 9, opacity: active ? 1 : 0.4 }}>{arrow}</span>
       {!right && <span>{col.label}</span>}
+      {col.info && (
+        <span
+          title={col.info}
+          onClick={(e) => e.stopPropagation()}
+          style={{ fontSize: 10, opacity: 0.55, cursor: "help", fontWeight: 700 }}
+        >
+          ⓘ
+        </span>
+      )}
     </button>
   );
 }
@@ -272,7 +367,7 @@ function money(n) {
 
 // Region group header — click anywhere to fold/unfold. Counts stay visible when
 // collapsed so a VP can hide a region and still see its exposure.
-function RegionHeader({ region, count, atRisk, collapsed, onToggle }) {
+function RegionHeader({ region, count, atRisk, booked, bookedCount, collapsed, onToggle }) {
   return (
     <button
       onClick={onToggle}
@@ -322,6 +417,11 @@ function RegionHeader({ region, count, atRisk, collapsed, onToggle }) {
       <span style={{ fontSize: 12, color: "oklch(0.5 0.012 260)" }}>
         {money(atRisk)} forecasted at risk
       </span>
+      {booked > 0 && (
+        <span style={{ fontSize: 12, color: C.positive, fontWeight: 500 }}>
+          · {money(booked)} booked ({bookedCount})
+        </span>
+      )}
       {collapsed && (
         <span style={{ fontSize: 11.5, color: C.faint, marginLeft: 2 }}>· hidden</span>
       )}
@@ -329,9 +429,19 @@ function RegionHeader({ region, count, atRisk, collapsed, onToggle }) {
   );
 }
 
-export default function DealsTab({ deals, regionOrder, filters, setFilters, onOpen, onHover, onLeave }) {
+export default function DealsTab({
+  deals,
+  bookedDeals = [],
+  regionOrder,
+  filters,
+  setFilters,
+  onOpen,
+  onHover,
+  onLeave,
+}) {
   const [sort, setSort] = useState({ col: "risk", dir: "desc" });
   const [collapsed, setCollapsed] = useState({});
+  const [showClosed, setShowClosed] = useState(true);
 
   const toggle = (key, val) =>
     setFilters((f) => ({
@@ -349,20 +459,30 @@ export default function DealsTab({ deals, regionOrder, filters, setFilters, onOp
   const toggleRegion = (region) =>
     setCollapsed((c) => ({ ...c, [region]: !c[region] }));
 
+  // Region + segment filters apply to both lists; the risk-tier filter only
+  // makes sense for flagged deals (booked deals have no risk).
+  const inRegionSeg = (d) =>
+    (filters.regions.length === 0 || filters.regions.includes(d.region)) &&
+    (filters.segments.length === 0 || filters.segments.includes(d.segment));
+
   const shown = deals.filter(
-    (d) =>
-      (filters.tiers.length === 0 || filters.tiers.includes(tierOf(d.risk))) &&
-      (filters.regions.length === 0 || filters.regions.includes(d.region)) &&
-      (filters.segments.length === 0 || filters.segments.includes(d.segment))
+    (d) => inRegionSeg(d) && (filters.tiers.length === 0 || filters.tiers.includes(tierOf(d.risk)))
   );
+  const closedShown = showClosed ? bookedDeals.filter(inRegionSeg) : [];
 
   const groups = regionOrder
     .map((region) => {
-      const rows = shown.filter((d) => d.region === region);
-      const atRisk = rows.reduce((s, d) => s + d.arr, 0);
-      return { region, rows: sortRows(rows, sort), atRisk };
+      const flaggedRows = sortRows(shown.filter((d) => d.region === region), sort);
+      const closedRows = sortRows(closedShown.filter((d) => d.region === region), sort);
+      return {
+        region,
+        flaggedRows,
+        closedRows,
+        atRisk: flaggedRows.reduce((s, d) => s + d.arr, 0),
+        booked: closedRows.reduce((s, d) => s + d.arr, 0),
+      };
     })
-    .filter((g) => g.rows.length > 0);
+    .filter((g) => g.flaggedRows.length > 0 || g.closedRows.length > 0);
 
   return (
     <div>
@@ -372,8 +492,13 @@ export default function DealsTab({ deals, regionOrder, filters, setFilters, onOp
         <FilterGroup label="Region" values={regionOrder} active={filters.regions} toggle={(v) => toggle("regions", v)} />
         <Divider />
         <FilterGroup label="Segment" values={SEGMENTS} active={filters.segments} toggle={(v) => toggle("segments", v)} />
+        <Divider />
+        <ClosedToggle on={showClosed} count={bookedDeals.length} onToggle={() => setShowClosed((v) => !v)} />
         <div style={{ marginLeft: "auto", fontSize: 12.5, color: C.muted }}>
-          {shown.length} of {deals.length} flagged deals
+          {shown.length} of {deals.length} flagged
+          {showClosed && bookedDeals.length > 0 && (
+            <span style={{ color: C.positive }}> · {closedShown.length} booked</span>
+          )}
         </div>
       </div>
 
@@ -383,22 +508,66 @@ export default function DealsTab({ deals, regionOrder, filters, setFilters, onOp
           <div key={g.region} style={{ marginBottom: 22 }}>
             <RegionHeader
               region={g.region}
-              count={g.rows.length}
+              count={g.flaggedRows.length}
               atRisk={g.atRisk}
+              booked={g.booked}
+              bookedCount={g.closedRows.length}
               collapsed={isCollapsed}
               onToggle={() => toggleRegion(g.region)}
             />
             {!isCollapsed && (
               <div style={{ background: "#fff", border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
                 <HeaderRow sort={sort} onSort={onSort} />
-                {g.rows.map((d) => (
+                {g.flaggedRows.map((d) => (
                   <DealRow key={d.id} deal={d} onOpen={onOpen} onHover={onHover} onLeave={onLeave} />
+                ))}
+                {g.closedRows.map((d) => (
+                  <ClosedRow key={d.id} deal={d} />
                 ))}
               </div>
             )}
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// Toggle for the booked Closed Won rows — green (shown) by default, click to
+// filter them out.
+function ClosedToggle({ on, count, onToggle }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+      <span
+        style={{
+          fontSize: 11,
+          fontWeight: 600,
+          letterSpacing: "0.03em",
+          textTransform: "uppercase",
+          color: C.muted,
+        }}
+      >
+        Closed won
+      </span>
+      <button
+        onClick={onToggle}
+        title={on ? "Hide booked Closed Won deals" : "Show booked Closed Won deals"}
+        style={{
+          height: 28,
+          padding: "0 12px",
+          borderRadius: 20,
+          fontSize: 12,
+          fontWeight: 500,
+          fontFamily: "inherit",
+          cursor: "pointer",
+          transition: "all .12s",
+          border: `1px solid ${on ? C.closedBorder : C.border}`,
+          background: on ? C.closedBg : "#fff",
+          color: on ? C.closedText : "oklch(0.45 0.012 260)",
+        }}
+      >
+        {on ? `✓ Shown (${count})` : `Hidden (${count})`}
+      </button>
     </div>
   );
 }

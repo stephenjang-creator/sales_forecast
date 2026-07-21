@@ -114,8 +114,9 @@ def test_recommend_plays_for_flagged_deal() -> None:
     play = result["plays"][0]
     assert {"rule_id", "title", "why", "actions", "owner"} <= set(play.keys())
     assert play["actions"] and all(isinstance(a, str) for a in play["actions"])
-    # Every play maps to one of the deal's hits (plays respond to flags).
-    hit_ids = {h["rule_id"] for h in result["hits"]}
+    # Every play maps to one of the deal's hits, or is the signal-driven
+    # meeting_at_risk value touch (a play that responds to a signal, not a rule).
+    hit_ids = {h["rule_id"] for h in result["hits"]} | {"meeting_at_risk"}
     assert all(p["rule_id"] in hit_ids for p in result["plays"])
     json.dumps(result)
 

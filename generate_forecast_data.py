@@ -408,6 +408,13 @@ def inj_close_before_paper(rec, today):
 INJECTORS = [inj_slipped_close, inj_stalled_stage, inj_commit_low_qual,
              inj_late_stage_no_eb, inj_deep_discount_early, inj_close_before_paper]
 
+# Injectors that leave the forecast category alone (a deal keeps its stage-based
+# category). The two that force "Commit" (commit_low_qual, close_before_paper)
+# are the happy-ears anomalies -- they only make sense on a deal a rep is
+# actually committing, so they're reserved for watched deals below.
+FORECAST_NEUTRAL_INJECTORS = [inj_slipped_close, inj_stalled_stage,
+                              inj_late_stage_no_eb, inj_deep_discount_early]
+
 
 # ----------------------------------------------------------------------
 # Derived fields (what the detector will actually consume)
@@ -453,16 +460,23 @@ def _build_region_org(records, seed):
 
 
 def _assign_closed_forecast(records):
-    """Give closed (won/lost) deals the "Closed" forecast category.
+    """Forecast category for booked/lost deals.
 
-    Open deals keep the stage-gated category assigned in ``_base_record``
-    (Commit only at Negotiation, Best Case only at Proposal+). This post-pass
-    touches only closed-stage rows and uses no RNG, so every other column -- and
-    the detector scorecard -- stays byte-identical.
+    A **Closed Won** deal is booked: it carries no risk (nothing left to slip) and
+    counts toward the period's forecast, so it gets the "Closed" category. A
+    **Closed Lost** deal is gone -- it's excluded from the forecast entirely, so
+    it gets "Omitted" (matching how CRMs drop lost deals out of the rollup).
+
+    Open deals keep the stage-gated category assigned in ``_base_record`` (Commit
+    only at Negotiation, Best Case only at Proposal+). This post-pass touches only
+    closed-stage rows and uses no RNG, so every other column -- and the detector
+    scorecard -- stays byte-identical.
     """
     for rec in records:
-        if rec["stage"] in ("Closed Won", "Closed Lost"):
+        if rec["stage"] == "Closed Won":
             rec["forecast_category"] = "Closed"
+        elif rec["stage"] == "Closed Lost":
+            rec["forecast_category"] = "Omitted"
 
 
 def _next_meeting(rec, today, rng):
@@ -499,15 +513,30 @@ def build(n=600, seed=42, anomaly_rate=0.18):
         rec["rep"] = random.choice(reps)  # placeholder; region-specific owner set below
         records.append(rec)
 
-    # Inject anomalies into a random subset
+    # Inject anomalies into a random subset. How MANY issues a deal accumulates,
+    # and which kind, mirrors reality: a rep watches the deals they commit, so a
+    # flagged Commit usually hides a single decisive flaw (the "happy ears" case).
+    # Low-commitment deals (Pipeline/Omitted) get less attention, so when they go
+    # wrong they stack up several *hygiene* problems -- which lifts them off the
+    # single-issue risk-2 floor into the medium/high band, and keeps the top of
+    # the risk range from being all-Commit. The pre-injection (stage-based)
+    # forecast tells us how watched the deal is.
     n_anom = int(n * anomaly_rate)
     targets = random.sample(records, n_anom)
     for rec in targets:
-        order = list(INJECTORS)  # shuffle a copy; never mutate the shared list
-        random.shuffle(order)
+        low_commitment = rec["forecast_category"] in ("Pipeline", "Omitted")
+        if low_commitment:
+            # Neglected: 2-3 forecast-neutral problems -> medium/high risk, still
+            # Pipeline/Omitted (never force it up to Commit).
+            pool = list(FORECAST_NEUTRAL_INJECTORS)
+            want = random.choices([2, 3], weights=[0.55, 0.45])[0]
+        else:
+            # Watched (Commit/Best Case): usually one serious flaw, any type.
+            pool = list(INJECTORS)
+            want = random.choices([1, 2], weights=[0.70, 0.30])[0]
+        random.shuffle(pool)  # shuffle a copy; never mutate the shared list
         applied = 0
-        want = random.choices([1, 2], weights=[0.75, 0.25])[0]
-        for inj in order:
+        for inj in pool:
             if inj(rec, today):
                 applied += 1
                 if applied >= want:

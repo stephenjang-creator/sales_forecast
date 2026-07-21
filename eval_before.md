@@ -6,18 +6,18 @@
 
 | Metric | Value |
 | --- | --- |
-| Precision | 0.736 |
-| Recall | 0.964 |
-| F1 | 0.835 |
-| Confusion (TP / FP / FN / TN) | 81 / 29 / 3 / 487 |
+| Precision | 0.741 |
+| Recall | 0.988 |
+| F1 | 0.847 |
+| Confusion (TP / FP / FN / TN) | 83 / 29 / 1 / 487 |
 
 ### Per-rule
 
 | Rule | Precision | Recall | Fired | Labeled | Correct |
 | --- | --- | --- | --- | --- | --- |
-| slipped_close_date | 1.000 | 1.000 | 23 | 23 | 23 |
-| stalled_in_stage | 0.542 | 0.684 | 24 | 19 | 13 |
-| commit_low_meddpicc | 0.714 | 0.909 | 28 | 22 | 20 |
-| late_stage_no_economic_buyer | 0.857 | 1.000 | 14 | 12 | 12 |
-| premature_deep_discount | 0.300 | 1.000 | 30 | 9 | 9 |
-| imminent_close_no_paper_process | 0.909 | 0.952 | 22 | 21 | 20 |
+| slipped_close_date | 1.000 | 1.000 | 50 | 50 | 50 |
+| stalled_in_stage | 0.784 | 0.741 | 51 | 54 | 40 |
+| commit_low_meddpicc | 0.667 | 1.000 | 9 | 6 | 6 |
+| late_stage_no_economic_buyer | 0.800 | 1.000 | 15 | 12 | 12 |
+| premature_deep_discount | 0.588 | 1.000 | 51 | 30 | 30 |
+| imminent_close_no_paper_process | 0.889 | 1.000 | 9 | 8 | 8 |

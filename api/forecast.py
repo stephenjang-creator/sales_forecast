@@ -123,6 +123,7 @@ def _deal_dict(row) -> dict:
         "closeDate": _close_str(row.get("close_date")),
         "nextMeeting": (None if nm is None or nm != nm else str(nm)),
         "rules": _rule_dicts(hits),
+        "closed": fc == "Closed",  # Closed Won: booked, no risk, no action
     }
 
 
@@ -131,6 +132,25 @@ def flagged_deals() -> list[dict]:
     df = _scored()
     flagged = df[df["predicted_anomaly"]].sort_values("risk_score", ascending=False)
     return [_deal_dict(row) for _, row in flagged.iterrows()]
+
+
+def booked_deals() -> list[dict]:
+    """Closed Won deals -- booked revenue for the period, richest first.
+
+    These are done: no anomaly can fire on a closed deal, so they carry no risk
+    and need no action. They still count toward the period forecast, which is why
+    the dashboard shows them (highlighted) rather than hiding them.
+    """
+    df = _scored()
+    won = df[df["stage"] == "Closed Won"].sort_values("arr", ascending=False)
+    return [_deal_dict(row) for _, row in won.iterrows()]
+
+
+def _booked_totals() -> tuple[float, int]:
+    """(booked ARR, deal count) for Closed Won -- the locked part of the forecast."""
+    df = _scored()
+    won = df[df["stage"] == "Closed Won"]
+    return float(won["arr"].sum()), int(len(won))
 
 
 def kpis_and_summary(deals: list[dict]) -> dict:
@@ -147,7 +167,15 @@ def kpis_and_summary(deals: list[dict]) -> dict:
         by_region[d["region"]] = by_region.get(d["region"], 0.0) + d["arr"]
     top_region = max(by_region.items(), key=lambda kv: kv[1]) if by_region else ("--", 0.0)
 
+    booked_arr, booked_n = _booked_totals()
+
     kpis = [
+        {
+            "label": "Booked · Closed Won",
+            "value": money(booked_arr),
+            "sub": f"{booked_n} deals · locked",
+            "tone": "positive",
+        },
         {
             "label": "Forecasted, flagged",
             "value": money(flagged_arr),
@@ -174,8 +202,9 @@ def kpis_and_summary(deals: list[dict]) -> dict:
         },
     ]
     narrative = (
-        f"{money(at_risk_arr)} of Commit + Best Case is flagged across {len(at_risk)} "
-        f"at-risk deals — {top_region[0]} carries the most exposure at "
+        f"{money(booked_arr)} is already booked (Closed Won) this period. Of the open "
+        f"pipeline, {money(at_risk_arr)} of Commit + Best Case is flagged across "
+        f"{len(at_risk)} at-risk deals — {top_region[0]} carries the most exposure at "
         f"{money(top_region[1])}, driven by low-confidence Commits and slipped close dates."
     )
     return {"kpis": kpis, "narrative": narrative}
@@ -236,6 +265,7 @@ def full_payload() -> dict:
     deals = flagged_deals()
     return {
         "deals": deals,
+        "bookedDeals": booked_deals(),
         **kpis_and_summary(deals),
         "fastMover": fast_mover(),
         "scorecard": scorecard(),

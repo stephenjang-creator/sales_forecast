@@ -73,7 +73,7 @@ a 600-deal pipeline scored by deterministic rules, not a black-box model.
 
 Underneath, the same deterministic engine powers all three — the
 [eval scorecard](#eval-scorecard) shows exactly how accurate it is
-(**F1 0.835 → 0.954** region-aware), and every flag traces back to one auditable
+(**F1 0.847 → 0.960** region-aware), and every flag traces back to one auditable
 rule.
 
 ## Eval scorecard
@@ -90,33 +90,33 @@ labeled relative to each region's norm, so the detector is scored two ways
 
 | Metric | Region-agnostic (one global norm) | **Region-aware (each region's norm)** |
 | --- | --- | --- |
-| Precision | 0.736 | **0.922** |
-| Recall | 0.964 | **0.988** |
-| **F1** | **0.835** | **0.954** |
-| Confusion (TP/FP/FN/TN) | 81 / 29 / 3 / 487 | 83 / 7 / 1 / 509 |
+| Precision | 0.741 | **0.923** |
+| Recall | 0.988 | **1.000** |
+| **F1** | **0.847** | **0.960** |
+| Confusion (TP/FP/FN/TN) | 83 / 29 / 1 / 487 | 84 / 7 / 0 / 509 |
 
-Region-aware scoring recovers **+11.9 F1 points** — the two region-sensitive
+Region-aware scoring recovers **+11.3 F1 points** — the two region-sensitive
 rules tell the story:
 
 | Rule (region-aware) | Precision | Recall | vs agnostic |
 | --- | --- | --- | --- |
 | slipped_close_date | 1.000 | 1.000 | — |
-| **stalled_in_stage** | **1.000** | **1.000** | agnostic 0.542 / 0.684 |
-| commit_low_meddpicc | 0.714 | 0.909 | region-independent |
-| late_stage_no_economic_buyer | 0.857 | 1.000 | region-independent |
-| **premature_deep_discount** | **0.600** | 1.000 | agnostic 0.300 prec |
-| imminent_close_no_paper_process | 0.909 | 0.952 | — |
+| **stalled_in_stage** | **1.000** | **1.000** | agnostic 0.784 / 0.741 |
+| commit_low_meddpicc | 0.667 | 1.000 | region-independent |
+| late_stage_no_economic_buyer | 0.800 | 1.000 | region-independent |
+| **premature_deep_discount** | **0.833** | 1.000 | agnostic 0.588 prec |
+| imminent_close_no_paper_process | 0.889 | 1.000 | — |
 
 **Reading the numbers, honestly** (full before/after in [`TUNING.md`](TUNING.md)):
 
 - **`stalled_in_stage`:** the global norm over-flags EMEA's normally-long
   proposals *and* misses NA's fast-region stalls; judging against each region's
-  own norm fixes both (0.54/0.68 → 1.00/1.00).
+  own norm fixes both (0.78/0.74 → 1.00/1.00).
 - **`premature_deep_discount`:** region-aware stops false-flagging APAC's normal
-  early discounts (0.30 → 0.60 precision). The residual false positives are
+  early discounts (0.59 → 0.83 precision). The residual false positives are
   natural 40% catalog discounts in other regions — feature-identical to the real
   ones, so we flag them honestly rather than overfit.
-- **`commit_low_meddpicc` (0.71/0.91) / `late_stage_no_economic_buyer` (0.86/1.00)**
+- **`commit_low_meddpicc` (0.67/1.00) / `late_stage_no_economic_buyer` (0.80/1.00)**
   carry some realistic co-injection overlap and are region-independent (identical
   in both modes).
 
@@ -325,7 +325,7 @@ its region's own norms (all tunable in `config.py`):
 | **APAC** | Early deep discounts are normal practice | `premature_deep_discount` is suppressed |
 
 Because the labels are region-relative, region-aware scoring **materially
-outperforms** the naive one-global-norm detector: **F1 0.835 → 0.954** (see the
+outperforms** the naive one-global-norm detector: **F1 0.847 → 0.960** (see the
 scorecard above and [`TUNING.md`](TUNING.md)). It's **off by default** for
 backward-compatible reproducibility; enable it via the UI toggle,
 `engine.run(df, region_aware=True)`, `make eval-region`, or the `region_aware`

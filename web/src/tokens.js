@@ -19,6 +19,12 @@ export const C = {
   warning: "oklch(0.58 0.17 40)",
   critical: "oklch(0.55 0.17 25)",
   greenRail: "oklch(0.68 0.13 155)",
+  // Closed Won (booked) treatment: light-green row + a saturated accent for chips.
+  closedBg: "oklch(0.965 0.045 155)",
+  closedBgHover: "oklch(0.95 0.06 155)",
+  closedBorder: "oklch(0.86 0.08 155)",
+  closedText: "oklch(0.42 0.12 155)",
+  positive: "oklch(0.52 0.13 155)",
 };
 
 export const MONO = "'IBM Plex Mono', monospace";
@@ -48,4 +54,5 @@ export const KPI_TONE = {
   muted: C.muted,
   warning: C.warning,
   critical: C.critical,
+  positive: C.positive,
 };
