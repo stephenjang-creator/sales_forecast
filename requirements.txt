@@ -1,3 +1,6 @@
+# Full dev environment (tests, both UIs, MCP, agents). The deployable container
+# installs the trimmed requirements-api.txt instead -- keep both in sync.
+
 # Deterministic core
 pandas>=2.0
 
