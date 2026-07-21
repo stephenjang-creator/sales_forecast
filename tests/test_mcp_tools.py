@@ -118,6 +118,8 @@ def test_region_top_actions_grouped_and_ranked() -> None:
         # arr_at_stake is the sum of the covered deals' ARR.
         assert abs(a["arr_at_stake"] - round(sum(d["arr"] for d in a["deals"]), 0)) < 1.0
         assert {"title", "first_step", "owner"} <= set(a.keys())
+        for deal in a["deals"]:
+            assert {"champion_seniority", "good_champion"} <= set(deal.keys())
     json.dumps(plan)
 
 
@@ -126,10 +128,56 @@ def test_region_top_actions_default_top_n_is_three() -> None:
     assert len(plan["actions"]) <= 3
 
 
+def test_region_top_actions_vp_call_shortlist_is_capped_and_senior() -> None:
+    import config
+
+    plan = srv.region_top_actions("NA")
+    calls = plan["vp_should_join_calls"]
+    assert len(calls) <= config.VP_CALL_CAPACITY  # calls are scarce
+    for c in calls:
+        assert {"deal_id", "stakeholder", "move", "arr"} <= set(c.keys())
+        assert c["stakeholder"], "a call-worthy deal names its senior stakeholder"
+
+
 def test_region_top_actions_region_aware_and_unknown() -> None:
     aware = srv.region_top_actions("APAC", region_aware=True)
     assert aware["region_aware"] is True
     assert "error" in srv.region_top_actions("Nowhere")
+
+
+def test_priority_weight_favors_bottom_of_funnel_and_champion() -> None:
+    import pandas as pd
+
+    late = pd.Series({"stage": "Negotiation", "champion_seniority": "VP", "m_champion": 3})
+    early = pd.Series({"stage": "Discovery", "champion_seniority": "IC", "m_champion": 0})
+    # Same ARR, same severity: bottom-of-funnel + good champion outweighs early.
+    assert srv._deal_priority_weight(late, "risk", "high") > srv._deal_priority_weight(
+        early, "risk", "high"
+    )
+    # A good champion boosts an otherwise identical deal.
+    champ = pd.Series({"stage": "Proposal", "champion_seniority": "Director", "m_champion": 3})
+    nochamp = pd.Series({"stage": "Proposal", "champion_seniority": "IC", "m_champion": 0})
+    assert srv._deal_priority_weight(champ, "risk", "medium") > srv._deal_priority_weight(
+        nochamp, "risk", "medium"
+    )
+    # A fast mover stays high even early-stage (opportunity base + stage floor).
+    fast_early = pd.Series({"stage": "Discovery", "champion_seniority": "VP", "m_champion": 3})
+    assert srv._deal_priority_weight(fast_early, "opportunity", "opportunity") >= 0.9 * 0.5
+
+
+def test_good_champion_and_senior_stakeholder() -> None:
+    import pandas as pd
+
+    assert srv._good_champion(pd.Series({"champion_seniority": "Director", "m_champion": 0}))
+    assert srv._good_champion(pd.Series({"champion_seniority": "IC", "m_champion": 3}))
+    assert not srv._good_champion(pd.Series({"champion_seniority": "Manager", "m_champion": 1}))
+    # Senior stakeholder (VP+ or C-suite approver) => call-worthy.
+    assert srv._senior_stakeholder(pd.Series({"champion_seniority": "C-Suite"})) is not None
+    assert srv._senior_stakeholder(pd.Series({"champion_seniority": "Director"})) is None
+    assert (
+        srv._senior_stakeholder(pd.Series({"champion_seniority": "Manager", "csuite_approval": 1}))
+        is not None
+    )
 
 
 def test_list_deals_flagged_only() -> None:

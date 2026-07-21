@@ -107,13 +107,24 @@ _ACTION_ITEM = {
     "required": ["priority", "action", "deals"],
 }
 
+_CALL_ITEM = {
+    "type": "object",
+    "properties": {
+        "deal_id": {"type": "string"},
+        "why": {"type": "string", "description": "Why the VP should personally join this call."},
+    },
+    "required": ["deal_id", "why"],
+}
+
 _SUBMIT_ACTIONS = {
     "name": "submit_region_actions",
     "description": (
         "Submit the regional VP's prioritized worklist. Call exactly once, after "
-        "reading region_top_actions. Each action is ONE move that may cover "
-        "several deals; keep them in priority order and use only the deals the "
-        "tool returned."
+        "reading region_top_actions. `actions` are plays the VP DELEGATES to "
+        "managers via a note (one move may cover several deals). `calls_to_join` "
+        "is the short list of deals the VP should personally join a call on -- use "
+        "only the deals region_top_actions put in vp_should_join_calls. Keep "
+        "actions in priority order and use only the deals the tool returned."
     ),
     "input_schema": {
         "type": "object",
@@ -121,6 +132,7 @@ _SUBMIT_ACTIONS = {
             "region": {"type": "string"},
             "headline": {"type": "string", "description": "The single top priority today."},
             "actions": {"type": "array", "items": _ACTION_ITEM},
+            "calls_to_join": {"type": "array", "items": _CALL_ITEM},
             "rationale": {"type": "string"},
         },
         "required": ["region", "actions"],
@@ -142,12 +154,16 @@ _DEAL_SYSTEM = (
 _REGION_SYSTEM = (
     "You are an expert sales leader advising a regional VP. Give them the top few "
     "things to do TODAY, in priority order. Ground everything in "
-    "region_top_actions, which scans the region's active pipeline and returns "
-    "actions already ranked by ARR-at-stake and urgency -- each action is ONE "
-    "play that may cover several deals (e.g. run a MEDDPICC call on 5 deals). "
-    "Turn it into a crisp worklist: state each move as an imperative, name the "
-    "deals it covers, and lead with the highest-leverage action. Use only the "
-    "deals the tool returned; never invent a deal or number. When finished, call "
+    "region_top_actions, which scans the region's active pipeline; its ranking "
+    "already favors bottom-of-funnel, well-championed deals (a few steps from "
+    "close) and fast movers. Respect the VP's two levers: the `actions` are plays "
+    "they DELEGATE to their managers via a note -- one play may cover several "
+    "deals (e.g. run a MEDDPICC call on 5 deals) -- so state each as an imperative "
+    "and name the deals it covers. The `vp_should_join_calls` list is the handful "
+    "of deals the VP should personally join a call on (calls are scarce, so it's "
+    "short and skews to senior-stakeholder deals); pass those through as "
+    "calls_to_join. Lead with the highest-leverage action. Use only the deals the "
+    "tool returned; never invent a deal or number. When finished, call "
     "submit_region_actions exactly once."
 )
 
@@ -216,10 +232,15 @@ def _deterministic_actions(plan: dict) -> dict:
         )
     else:
         headline = "No open priorities in this region."
+    calls = [
+        {"deal_id": c["deal_id"], "why": f"{c['stakeholder']} — {c['move']}"}
+        for c in (plan.get("vp_should_join_calls", []) if isinstance(plan, dict) else [])
+    ]
     return {
         "region": plan.get("region", ""),
         "headline": headline,
         "actions": actions,
+        "calls_to_join": calls,
         "rationale": "Deterministic top actions from region_top_actions (no LLM).",
     }
 
@@ -504,7 +525,12 @@ def _print_priorities(p: dict) -> None:
         if a.get("why"):
             print(f"       ↳ {a['why']}")
         if a.get("deals"):
-            print(f"       deals: {_fmt_deal_list(a['deals'])}")
+            print(f"       notify managers on: {_fmt_deal_list(a['deals'])}")
+    calls = p.get("calls_to_join", [])
+    if calls:
+        print("    ☎ Join these calls yourself (VP time is scarce):")
+        for c in calls:
+            print(f"       • {c['deal_id']}: {c['why']}")
 
 
 def _print_region_report(result: dict) -> None:

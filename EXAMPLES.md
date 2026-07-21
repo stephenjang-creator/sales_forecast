@@ -175,16 +175,23 @@ seed 42); yours will differ if you point `FORECAST_CSV` at your own export.
 
 - **Call:** `region_top_actions("NA", top_n=3)` (deterministic), or the
   `sales_guru` agent (`--region NA` / `--all`) to narrate it.
-- **Returns:** a single ranked list of `actions`. Each action is **one play that
-  can cover several deals** (e.g. "run a MEDDPICC qualification call" across
-  every thin-Commit deal), with `kind` (risk | opportunity), `deal_count`,
-  `arr_at_stake`, the covered `deals`, and a `priority_score`. Actions are ranked
-  by ARR-at-stake weighted by urgency (`config.ACTION_PRIORITY_WEIGHT`), and the
-  top `top_n` (default 3) are returned.
-- **Narration tip:** lead with action #1, state it as an imperative, and name the
-  deals it covers ("Close these 22 fast movers — $935K"). It's a risk/opportunity
-  worklist, **not** an attainment forecast — pair with `bookings_rollup` for the
-  number.
+- **Returns:** a single ranked list of `actions` (each **one play that can cover
+  several deals** — e.g. "run a MEDDPICC qualification call" across every
+  thin-Commit deal — with `kind`, `deal_count`, `arr_at_stake`, the covered
+  `deals`, and a `priority_score`), plus a short **`vp_should_join_calls`** list.
+- **How it's ranked:** weight = urgency × funnel-depth(stage) × champion-boost, so
+  **bottom-of-funnel, well-championed deals** (a few steps from close) and **fast
+  movers** rise to the top. Each covered deal carries `champion_seniority` and
+  `good_champion`, and the deals within an action are ordered most-actionable first.
+- **Two levers (matches how a VP works):** the `actions` are plays to **delegate
+  to managers via a note** — they scale, so no cap. `vp_should_join_calls` is a
+  short, capped list (`config.VP_CALL_CAPACITY`) of **senior-stakeholder** deals
+  (VP+/C-suite champion, or a C-suite approver) for the VP to **personally join**,
+  because calls are scarce.
+- **Narration tip:** lead with action #1 as an imperative ("Close these 22 fast
+  movers — $935K"); tell the VP which managers to notify vs. which few calls to
+  join themselves. It's a worklist, **not** an attainment forecast — pair with
+  `bookings_rollup` for the number.
 - **Run the agent:** `python -m agents.sales_guru --region NA` (or `--all`), or
   add `--dry-run` for the deterministic worklist with no key.
 

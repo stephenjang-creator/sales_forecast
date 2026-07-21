@@ -555,6 +555,64 @@ def _fast_reason(row: pd.Series) -> str:
     return "Empowered champion and a simple decision process."
 
 
+def _champion_rank(row: pd.Series) -> int:
+    """Ordinal rank of the champion's seniority (-1 if absent/unknown)."""
+    level = _opt_str(row, "champion_seniority")
+    levels = config.CHAMPION_LEVELS
+    return levels.index(level) if level in levels else -1
+
+
+def _good_champion(row: pd.Series) -> bool:
+    """True when the deal has an empowered champion or a strong MEDDPICC champion.
+
+    "Good champion" makes a deal more actionable -- someone on the inside can
+    drive the last few steps.
+    """
+    if _champion_rank(row) >= config.CHAMPION_LEVELS.index(config.CHAMPION_SENIOR_MIN):
+        return True
+    m_champ = _opt_num(row, "m_champion", int)
+    return m_champ is not None and m_champ >= config.GOOD_M_CHAMPION_MIN
+
+
+def _senior_stakeholder(row: pd.Series) -> str | None:
+    """A higher-level person a VP would personally join a call for, else None.
+
+    Calls are the VP's scarce lever -- they pick deals where a senior person is
+    already involved (a VP+/C-suite champion, or a C-suite approver in the loop).
+    """
+    level = _opt_str(row, "champion_seniority")
+    levels = config.CHAMPION_LEVELS
+    if level in levels and levels.index(level) >= levels.index(config.CALL_STAKEHOLDER_MIN):
+        return f"{level} champion engaged"
+    if _opt_num(row, "csuite_approval", int) == 1:
+        return "C-suite approver in the loop"
+    return None
+
+
+def _stage_depth(row: pd.Series, kind: str) -> float:
+    """Funnel-depth weight for a deal: closer to close => higher.
+
+    Bottom-of-funnel deals (Negotiation > Proposal > ...) weigh more. Fast movers
+    close quickly whatever their stage, so they never fall below a floor.
+    """
+    depth = config.STAGE_WIN_RATE.get(str(row["stage"]), config.STAGE_DEPTH_DEFAULT)
+    if kind == "opportunity":
+        return max(depth, config.OPPORTUNITY_STAGE_FLOOR)
+    return depth
+
+
+def _deal_priority_weight(row: pd.Series, kind: str, severity: str) -> float:
+    """Per-deal priority weight: urgency x funnel-depth x champion boost.
+
+    Favors bottom-of-funnel, well-championed deals (a few steps from close),
+    while keeping fast movers high via their opportunity base + stage floor.
+    """
+    base = config.ACTION_PRIORITY_WEIGHT.get(severity, 0.5)
+    depth = _stage_depth(row, kind)
+    champ = 1.0 + (config.CHAMPION_QUALITY_BONUS if _good_champion(row) else 0.0)
+    return base * depth * champ
+
+
 def _action_deal(row: pd.Series, reason: str) -> dict:
     """One deal under a grouped action: identity + why it's on the list."""
     return {
@@ -563,6 +621,8 @@ def _action_deal(row: pd.Series, reason: str) -> dict:
         "stage": str(row["stage"]),
         "forecast_category": str(row["forecast_category"]),
         "arr": float(row["arr"]),
+        "champion_seniority": _opt_str(row, "champion_seniority"),
+        "good_champion": _good_champion(row),
         "reason": reason,
     }
 
@@ -589,15 +649,24 @@ def region_top_actions(region: str, region_aware: bool = False, top_n: int = 3) 
 
     Scans the region's OPEN pipeline and groups deals by the play they need, so
     ONE action can cover several deals (e.g. "run a MEDDPICC qualification call"
-    on every thin-Commit deal). Each action is ranked by its ARR-at-stake
-    weighted by urgency (high-severity risk first, then fast-mover opportunity,
-    then medium risk -- weights in config.ACTION_PRIORITY_WEIGHT), and the top
-    `top_n` (default 3) are returned as a single prioritized worklist.
+    on every thin-Commit deal). Each action is ranked by ARR-at-stake weighted so
+    that BOTTOM-OF-FUNNEL, well-championed deals (a few steps from close) and fast
+    movers rise to the top -- weight = urgency x funnel-depth(stage) x champion
+    boost, all tunable in config.
 
-    Each action carries: the play (title, first_step, owner), kind (risk |
-    opportunity), the deals it covers (biggest ARR first), deal_count,
-    arr_at_stake, and a priority_score. Set region_aware=True for the per-region
-    threshold overlay. This is a prioritized worklist, not an attainment forecast.
+    Two levers, matching how a VP actually works:
+    - actions: the play-level worklist to DELEGATE to managers (send a note) --
+      one play per action, may cover many deals. Each carries the play (title,
+      first_step, owner), kind (risk|opportunity), the deals (most actionable
+      first, each with champion_seniority + good_champion), deal_count,
+      arr_at_stake, priority_score. Top `top_n` (default 3) returned.
+    - vp_should_join_calls: a SHORT, capped shortlist (config.VP_CALL_CAPACITY) of
+      specific deals the VP should personally join a call on to pull forward --
+      the ones with a higher-level person involved (VP+/C-suite champion or a
+      C-suite approver). Calls are scarce, so this list is deliberately small.
+
+    Set region_aware=True for the per-region overlay. A prioritized worklist, not
+    an attainment forecast.
     """
     try:
         if not _has_region():
@@ -607,26 +676,46 @@ def region_top_actions(region: str, region_aware: bool = False, top_n: int = 3) 
         if sub.empty:
             return {"error": f"no active (open) deals in region {region!r}"}
 
-        # Accumulate one group per play across all active deals in the region.
+        # Accumulate one group per play across all active deals; also collect the
+        # deals a VP could personally join a call on (senior stakeholder present).
         groups: dict[str, dict] = {}
+        call_candidates: list[dict] = []
         for _, row in sub.iterrows():
             candidate = _candidate_action(row)
             if candidate is None:
                 continue
             play, kind, severity, reason = candidate
-            weight = config.ACTION_PRIORITY_WEIGHT.get(severity, 0.5)
+            contribution = float(row["arr"]) * _deal_priority_weight(row, kind, severity)
             g = groups.setdefault(
-                play.rule_id,
-                {"play": play, "kind": kind, "deals": [], "score": 0.0, "severities": set()},
+                play.rule_id, {"play": play, "kind": kind, "deals": [], "score": 0.0}
             )
-            g["deals"].append(_action_deal(row, reason))
-            g["score"] += float(row["arr"]) * weight
-            g["severities"].add(severity)
+            deal = _action_deal(row, reason)
+            deal["_contribution"] = contribution
+            g["deals"].append(deal)
+            g["score"] += contribution
+
+            stakeholder = _senior_stakeholder(row)
+            if stakeholder is not None:
+                call_candidates.append(
+                    {
+                        "deal_id": str(row["deal_id"]),
+                        "account": str(row["account"]),
+                        "stage": str(row["stage"]),
+                        "arr": float(row["arr"]),
+                        "champion_seniority": _opt_str(row, "champion_seniority"),
+                        "stakeholder": stakeholder,
+                        "move": play.title,
+                        "reason": reason,
+                        "_score": float(row["arr"]) * _stage_depth(row, kind),
+                    }
+                )
 
         ranked = sorted(groups.values(), key=lambda g: g["score"], reverse=True)
         actions = []
         for i, g in enumerate(ranked[: max(1, int(top_n))], start=1):
-            deals = sorted(g["deals"], key=lambda d: d["arr"], reverse=True)
+            deals = sorted(g["deals"], key=lambda d: d["_contribution"], reverse=True)
+            for deal in deals:
+                deal.pop("_contribution", None)
             play: Play = g["play"]
             actions.append(
                 {
@@ -642,16 +731,25 @@ def region_top_actions(region: str, region_aware: bool = False, top_n: int = 3) 
                 }
             )
 
+        call_candidates.sort(key=lambda c: c["_score"], reverse=True)
+        calls = []
+        for c in call_candidates[: max(0, config.VP_CALL_CAPACITY)]:
+            c.pop("_score", None)
+            calls.append(c)
+
         return {
             "region": region,
             "region_aware": bool(region_aware),
             "active_deals": int(len(sub)),
             "actions_considered": int(len(groups)),
             "actions": actions,
+            "vp_should_join_calls": calls,
             "note": (
-                "Top actions across the region's active pipeline, one play per "
-                "action (may cover several deals), ranked by ARR-at-stake weighted "
-                "by urgency. A prioritized worklist, not an attainment forecast."
+                "Two levers: 'actions' are plays to DELEGATE to managers (one play "
+                "may cover many deals), ranked to favor bottom-of-funnel, "
+                "well-championed deals and fast movers; 'vp_should_join_calls' is a "
+                "short, capped list of senior-stakeholder deals for the VP to "
+                "personally join. A prioritized worklist, not an attainment forecast."
             ),
         }
     except Exception as exc:  # noqa: BLE001

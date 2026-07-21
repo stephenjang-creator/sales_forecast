@@ -90,6 +90,9 @@ def test_deterministic_actions_from_top_actions() -> None:
                 "deals": [{"deal_id": "D-8"}],
             },
         ],
+        "vp_should_join_calls": [
+            {"deal_id": "D-9", "stakeholder": "VP champion engaged", "move": "Pull forward"}
+        ],
     }
     out = _deterministic_actions(plan)
     assert out["region"] == "NA"
@@ -97,12 +100,15 @@ def test_deterministic_actions_from_top_actions() -> None:
     assert out["actions"][0]["action"] == "Pull it forward and close"
     assert out["actions"][0]["deals"] == ["D-9", "D-4"]  # one action, many deals
     assert out["actions"][1]["deals"] == ["D-8"]
+    # VP-personal calls carry through as a short, separate list.
+    assert out["calls_to_join"] == [{"deal_id": "D-9", "why": "VP champion engaged — Pull forward"}]
 
 
 def test_deterministic_actions_empty_region() -> None:
     out = _deterministic_actions({"region": "X", "actions": []})
     assert out["headline"].startswith("No open priorities")
     assert out["actions"] == []
+    assert out["calls_to_join"] == []
 
 
 # --------------------------------------------------------------------------- #

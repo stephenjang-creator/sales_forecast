@@ -97,12 +97,32 @@ COMPLEX_APPROVAL_MIN_LAYERS = 3  # >= this OR C-suite => complex/long process
 # --------------------------------------------------------------------------- #
 # Regional "top actions" worklist (sales guru --region).
 # A regional VP wants the few highest-leverage moves for the day, where one move
-# (a play) may cover several deals. Each candidate action is scored by its
-# ARR-at-stake weighted by urgency, so the ranking is deterministic and tunable.
+# (a play) may cover several deals. Each candidate deal contributes
+#     arr  ×  base(urgency/opportunity)  ×  funnel_depth(stage)  ×  champion_boost
+# to its action's score, so the ranking favors BOTTOM-OF-FUNNEL, well-championed
+# deals (a few steps from close) while keeping fast movers high. All tunable.
 # --------------------------------------------------------------------------- #
 ACTION_PRIORITY_WEIGHT = {
     "high": 1.0,  # high-severity risk -- act first
     "medium": 0.6,  # medium-severity risk
     "low": 0.4,
-    "opportunity": 0.75,  # fast movers to close (revenue now, but not at risk)
+    "opportunity": 0.9,  # fast movers to close -- kept high on purpose
 }
+# Funnel depth: deals closer to close (bottom of funnel) weigh more. Reuses
+# STAGE_WIN_RATE (Negotiation 0.75 > Proposal 0.50 > Qualification 0.25 >
+# Discovery 0.10), so "a few steps from close" floats to the top.
+STAGE_DEPTH_DEFAULT = 0.3  # stage not in STAGE_WIN_RATE
+# Fast movers close quickly regardless of current stage, so never let stage
+# depth drag an opportunity below this floor.
+OPPORTUNITY_STAGE_FLOOR = 0.5
+# A good champion (empowered, or a strong MEDDPICC champion score) makes a deal
+# more actionable -- boost its weight by this fraction.
+CHAMPION_QUALITY_BONUS = 0.5
+GOOD_M_CHAMPION_MIN = 2  # m_champion (0-3) at/above this counts as a good champion
+
+# A regional VP delegates most plays to managers via notes (no cap -- that
+# scales), but can personally JOIN only a few calls to pull deals forward, and
+# picks the ones with a higher-level person involved. The call shortlist is
+# capped and skews to senior stakeholders.
+VP_CALL_CAPACITY = 3  # how many calls the VP can personally join in a day
+CALL_STAKEHOLDER_MIN = "VP"  # champion at/above this rank => "higher-level person"
