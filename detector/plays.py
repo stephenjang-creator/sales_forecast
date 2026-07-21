@@ -155,14 +155,19 @@ def recommend_plays(hits: list[RuleHit]) -> list[Play]:
     return plays
 
 
+def primary_hit(hits: list[RuleHit]) -> RuleHit | None:
+    """A deal's highest-severity hit that has a play (first wins ties)."""
+    playable = [hit for hit in hits if hit.rule_id in PLAYBOOK]
+    if not playable:
+        return None
+    return max(playable, key=lambda hit: config.SEVERITY[hit.severity])
+
+
 def primary_play(hits: list[RuleHit]) -> Play | None:
     """The single play for a deal's highest-severity hit (first wins ties).
 
     Used where one deal gets one headline move (e.g. a regional VP worklist),
     rather than the full :func:`recommend_plays` list.
     """
-    playable = [hit for hit in hits if hit.rule_id in PLAYBOOK]
-    if not playable:
-        return None
-    top = max(playable, key=lambda hit: config.SEVERITY[hit.severity])
-    return PLAYBOOK[top.rule_id]
+    hit = primary_hit(hits)
+    return PLAYBOOK[hit.rule_id] if hit is not None else None

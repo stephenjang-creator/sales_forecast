@@ -219,8 +219,9 @@ and scored once at startup; point it at your own export via `FORECAST_CSV`.
 `forecast_summary`, `get_scorecard`, `list_regions`, `list_segments`,
 `list_industries`, `signals_summary`.
 **Play / action tools:** `recommend_plays` (deterministic plays to de-risk one
-deal), `region_action_plan` (a regional VP's prioritized worklist — fast movers
-to close, risk to remove, stalled/slipped to rescue).
+deal), `region_top_actions` (a regional VP's top-N prioritized actions across the
+active pipeline — one play per action, may cover several deals, ranked by
+ARR-at-stake × urgency).
 **Time / bookings tools:** `bookings_rollup` (current month/quarter projection +
 attainment), `pipeline_by_period` (bookings distribution across periods),
 `bookings_history` (actuals by period), `period_comparison` (MoM/QoQ/YoY).
@@ -350,32 +351,37 @@ flag; the plays *respond* to the flags the rules already set.
 | `premature_deep_discount` | Re-anchor on value before price |
 | `imminent_close_no_paper_process` | Kick off procurement and legal immediately |
 
-**The guru agent (`agents/sales_guru.py`)** runs in two modes over the MCP tools:
+**The guru agent (`agents/sales_guru.py`)** runs in three modes over the MCP tools:
 
 - **Coach one deal** (`--deal D-10023`): reads `assess_deal` + `recommend_plays`,
   then personalizes the plays to the deal — a talk track for the next call,
   sharpened next steps, the right owner.
-- **Prioritize a region** (`--region NA` / `--all`): reads `region_action_plan`
-  and turns it into a regional VP's ranked worklist in three buckets — **close
-  fast movers** (empowered-champion / simple-process deals to pull forward),
-  **jump on calls to remove risk** (flagged deals whose risk isn't a stall/slip),
-  and **get stalled/slipped deals back on track**. Each item names the deal and
-  the specific move.
+- **Prioritize a region** (`--region NA` / `--all`): reads `region_top_actions`
+  and gives the VP their **top N things to do today** (default 3), ranked. Each
+  action is **one play that can cover several deals** — "pull these 22 fast movers
+  forward ($935K)", "run a MEDDPICC call on these 13 Commit deals" — ordered by
+  ARR-at-stake weighted by urgency, so the biggest lever comes first.
+- **Chat** (`--chat`): an interactive session with every detector tool. Ask
+  _"what are my top 3 things in NA?"_ and then keep prompting — _"tell me more
+  about #2"_, _"who owns the first one?"_, _"assess D-10339"_ — the conversation
+  persists, so follow-ups build on what came before.
 
 ```bash
 export ANTHROPIC_API_KEY=sk-...
-make guru                                    # every region's VP priorities
+make guru                                    # every region's top-3 actions
 python -m agents.sales_guru --deal D-10023   # coach one deal
-python -m agents.sales_guru --region NA      # one region's worklist
+python -m agents.sales_guru --region NA      # one region's top 3 (‑‑top-n to change)
+python -m agents.sales_guru --chat --region NA   # ask, then keep prompting
 python -m agents.sales_guru --all --json     # machine-readable
 
-make guru-dry                                # NO key: deterministic plays / worklist
+make guru-dry                                # NO key: deterministic worklist
 make guru-dry DEAL=D-10023                   # deterministic plays for one deal
 ```
 
-Like the attainment agent, `--dry-run` runs the whole stdio + tools flow with no
-key or network — it returns the deterministic plays / worklist straight from the
-tools, so the plumbing (and the plays themselves) are verifiable offline.
+`--dry-run` runs the whole stdio + tools flow with no key or network — it returns
+the deterministic plays / worklist straight from the tools, so the plumbing (and
+the recommendations themselves) are verifiable offline. `--chat` is inherently
+LLM-driven, so it needs a key.
 
 ---
 

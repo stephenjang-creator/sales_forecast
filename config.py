@@ -93,3 +93,16 @@ CHAMPION_LEVELS = ("IC", "Manager", "Director", "VP", "C-Suite")
 CHAMPION_SENIOR_MIN = "Director"  # this rank or higher => senior/empowered
 SIMPLE_APPROVAL_MAX_LAYERS = 1  # <= this AND no C-suite => simple process
 COMPLEX_APPROVAL_MIN_LAYERS = 3  # >= this OR C-suite => complex/long process
+
+# --------------------------------------------------------------------------- #
+# Regional "top actions" worklist (sales guru --region).
+# A regional VP wants the few highest-leverage moves for the day, where one move
+# (a play) may cover several deals. Each candidate action is scored by its
+# ARR-at-stake weighted by urgency, so the ranking is deterministic and tunable.
+# --------------------------------------------------------------------------- #
+ACTION_PRIORITY_WEIGHT = {
+    "high": 1.0,  # high-severity risk -- act first
+    "medium": 0.6,  # medium-severity risk
+    "low": 0.4,
+    "opportunity": 0.75,  # fast movers to close (revenue now, but not at risk)
+}

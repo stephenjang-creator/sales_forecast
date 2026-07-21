@@ -9,23 +9,29 @@ server:
   -- a talk track for the next call, sharpened next steps, the right owner.
 
 - Region mode (``--region NA`` / ``--all``): prioritizes what a regional VP
-  should do. It reads ``region_action_plan`` -- fast movers to close, deals to
-  jump on a call and de-risk, and stalled/slipped deals to get back on track --
-  and turns it into a ranked, specific worklist.
+  should do TODAY. It reads ``region_top_actions`` -- the region's active
+  pipeline grouped by the play each deal needs, so ONE action can cover several
+  deals (e.g. "run a MEDDPICC call on these 5 deals"), ranked by ARR-at-stake --
+  and returns the top N (default 3) as a prioritized worklist.
+
+- Chat mode (``--chat``): an interactive REPL with all the detector tools. Ask
+  "what are my top 3 things in NA?", then keep prompting ("tell me about #2",
+  "who owns the first one?", "show me those deals") -- the conversation persists.
 
 What it is NOT: it never changes a flag or invents a deal or number the tools
 did not return. The rules own risk; the guru only recommends the motion.
 Deterministic core, LLM coaches, human-in-the-loop -- so ``--dry-run`` returns
-the deterministic plays with no key or network at all.
+the deterministic plays / worklist with no key or network at all.
 
 Usage:
     python -m agents.sales_guru --deal D-10023          # coach one deal
-    python -m agents.sales_guru --region NA             # one region's priorities
+    python -m agents.sales_guru --region NA             # a region's top 3 actions
     python -m agents.sales_guru --all                   # every region
     python -m agents.sales_guru --all --dry-run         # deterministic, no key
-    python -m agents.sales_guru --region EMEA --json    # machine-readable
+    python -m agents.sales_guru --chat                  # interactive; ask + follow up
+    python -m agents.sales_guru --chat --region NA      # chat, seeded on a region
 
-Needs ANTHROPIC_API_KEY for the agent path; --dry-run runs fully offline.
+Needs ANTHROPIC_API_KEY for the agent + chat paths; --dry-run runs fully offline.
 """
 
 from __future__ import annotations
@@ -40,7 +46,7 @@ from agents.mcp_client import (
     anthropic_tool_schema,
     call_tool,
     gather_deal_context,
-    gather_region_plan,
+    gather_region_actions,
     open_session,
 )
 
@@ -85,33 +91,39 @@ _SUBMIT_COACHING = {
     },
 }
 
-_PRIORITY_ITEM = {
+_ACTION_ITEM = {
     "type": "object",
     "properties": {
-        "deal_id": {"type": "string"},
-        "action": {"type": "string", "description": "The specific move for this deal."},
+        "priority": {"type": "integer"},
+        "action": {"type": "string", "description": "The move, as an imperative."},
+        "why": {"type": "string", "description": "The risk removed / opportunity taken."},
+        "owner": {"type": "string"},
+        "deals": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "The deal_ids this one action covers.",
+        },
     },
-    "required": ["deal_id", "action"],
+    "required": ["priority", "action", "deals"],
 }
 
-_SUBMIT_PRIORITIES = {
-    "name": "submit_region_priorities",
+_SUBMIT_ACTIONS = {
+    "name": "submit_region_actions",
     "description": (
-        "Submit the prioritized worklist for ONE region's VP. Call exactly once, "
-        "after reading region_action_plan. Use only the deals the plan returned; "
-        "put each in the bucket that matches its move."
+        "Submit the regional VP's prioritized worklist. Call exactly once, after "
+        "reading region_top_actions. Each action is ONE move that may cover "
+        "several deals; keep them in priority order and use only the deals the "
+        "tool returned."
     ),
     "input_schema": {
         "type": "object",
         "properties": {
             "region": {"type": "string"},
-            "headline": {"type": "string", "description": "The VP's single top priority."},
-            "close_fast_movers": {"type": "array", "items": _PRIORITY_ITEM},
-            "remove_risk": {"type": "array", "items": _PRIORITY_ITEM},
-            "get_back_on_track": {"type": "array", "items": _PRIORITY_ITEM},
+            "headline": {"type": "string", "description": "The single top priority today."},
+            "actions": {"type": "array", "items": _ACTION_ITEM},
             "rationale": {"type": "string"},
         },
-        "required": ["region", "headline"],
+        "required": ["region", "actions"],
     },
 }
 
@@ -128,13 +140,30 @@ _DEAL_SYSTEM = (
 )
 
 _REGION_SYSTEM = (
-    "You are an expert sales leader advising a regional VP. Prioritize what they "
-    "should do THIS WEEK. Ground everything in region_action_plan, which returns "
-    "three ranked buckets: fast movers to close, flagged deals to jump on a call "
-    "and de-risk, and stalled/slipped deals to get back on track. Turn it into a "
-    "crisp, specific worklist: name the deals, say the move, lead with the single "
-    "highest-leverage action. Use only the deals the plan returned; never invent "
-    "a deal or number. When finished, call submit_region_priorities exactly once."
+    "You are an expert sales leader advising a regional VP. Give them the top few "
+    "things to do TODAY, in priority order. Ground everything in "
+    "region_top_actions, which scans the region's active pipeline and returns "
+    "actions already ranked by ARR-at-stake and urgency -- each action is ONE "
+    "play that may cover several deals (e.g. run a MEDDPICC call on 5 deals). "
+    "Turn it into a crisp worklist: state each move as an imperative, name the "
+    "deals it covers, and lead with the highest-leverage action. Use only the "
+    "deals the tool returned; never invent a deal or number. When finished, call "
+    "submit_region_actions exactly once."
+)
+
+_CHAT_SYSTEM = (
+    "You are an expert enterprise sales coach (a 'sales guru') for a RevOps team, "
+    "in an interactive chat. Answer the user's questions about their pipeline "
+    "using the MCP tools, which wrap a deterministic detector. Key tools: "
+    "region_top_actions (a region's top prioritized things to do -- use this for "
+    "'what are my top 3 things?'), recommend_plays and assess_deal (one deal), "
+    "list_deals / assess_region / signals_summary (browse and roll up). Ground "
+    "every answer in the tools; the deterministic rules own every flag -- you "
+    "explain and recommend the play, you never change a flag or invent a deal, "
+    "contact, or number the tools did not return. Be concise and specific: name "
+    "deals, say the move, and when you list priorities keep them in the tool's "
+    "ranked order. It's fine to call several tools before answering, and to ask "
+    "a clarifying question (e.g. which region) when you need one."
 )
 
 
@@ -162,35 +191,36 @@ def _deterministic_coaching(ctx: dict) -> dict:
     }
 
 
-def _deterministic_priorities(plan: dict) -> dict:
-    """Region worklist straight from region_action_plan -- offline / fallback."""
-    prio = plan.get("priorities", {}) if isinstance(plan, dict) else {}
-
-    def _items(bucket: str) -> list[dict]:
-        out = []
-        for it in prio.get(bucket, []):
-            play = it.get("play") or {}
-            action = play.get("actions", [""])[0] if play.get("actions") else it.get("reason", "")
-            out.append({"deal_id": it["deal_id"], "action": action})
-        return out
-
-    fast = _items("close_fast_movers")
-    risk = _items("jump_on_calls_to_remove_risk")
-    stuck = _items("get_back_on_track")
-    headline = "No open priorities in this region."
-    if fast:
-        headline = f"Close {fast[0]['deal_id']} — it's a fast mover ready to pull forward."
-    elif risk:
-        headline = f"Jump on {risk[0]['deal_id']} to remove its risk."
-    elif stuck:
-        headline = f"Get {stuck[0]['deal_id']} back on track — it's stalled or slipped."
+def _deterministic_actions(plan: dict) -> dict:
+    """Region worklist straight from region_top_actions -- offline / fallback."""
+    tool_actions = plan.get("actions", []) if isinstance(plan, dict) else []
+    actions = []
+    for a in tool_actions:
+        deals = [d["deal_id"] for d in a.get("deals", [])]
+        actions.append(
+            {
+                "priority": a["priority"],
+                "action": a["title"],
+                "why": a["first_step"],
+                "owner": a.get("owner", ""),
+                "kind": a.get("kind", ""),
+                "deal_count": a.get("deal_count", len(deals)),
+                "arr_at_stake": a.get("arr_at_stake"),
+                "deals": deals,
+            }
+        )
+    if actions:
+        top = actions[0]
+        headline = (
+            f"{top['action']} — {top['deal_count']} deal(s), ${top['arr_at_stake']:,.0f} at stake."
+        )
+    else:
+        headline = "No open priorities in this region."
     return {
         "region": plan.get("region", ""),
         "headline": headline,
-        "close_fast_movers": fast,
-        "remove_risk": risk,
-        "get_back_on_track": stuck,
-        "rationale": "Deterministic regional worklist from region_action_plan (no LLM).",
+        "actions": actions,
+        "rationale": "Deterministic top actions from region_top_actions (no LLM).",
     }
 
 
@@ -272,17 +302,17 @@ async def _run_deal_guru(
 
 
 async def _run_region_guru(
-    client, session, region: str, model: str, region_aware: bool = False
+    client, session, region: str, model: str, region_aware: bool = False, top_n: int = 3
 ) -> dict:
-    """Prioritize one region to a submit_region_priorities call; return its dict."""
-    plan = await gather_region_plan(session, region, region_aware)
+    """Prioritize one region to a submit_region_actions call; return its dict."""
+    plan = await gather_region_actions(session, region, region_aware, top_n)
     if isinstance(plan, dict) and "error" in plan:
         return {"region": region, "error": plan["error"]}
     user = (
-        f"Region: {region}\n\n"
-        f"Prioritized plan (region_action_plan):\n{json.dumps(plan, indent=2)}\n\n"
-        "Turn this into the VP's worklist: name the deals, say the move, lead "
-        "with the highest-leverage action, then call submit_region_priorities."
+        f"Region: {region}. Give the VP their top {top_n} things to do today.\n\n"
+        f"Ranked actions (region_top_actions):\n{json.dumps(plan, indent=2)}\n\n"
+        "State each as an imperative, name the deals it covers, lead with the "
+        "highest-leverage action, then call submit_region_actions."
     )
     return await _drive(
         client,
@@ -290,9 +320,39 @@ async def _run_region_guru(
         model,
         _REGION_SYSTEM,
         user,
-        _SUBMIT_PRIORITIES,
-        _deterministic_priorities(plan),
+        _SUBMIT_ACTIONS,
+        _deterministic_actions(plan),
     )
+
+
+async def _agent_reply(client, session, model: str, tools: list[dict], messages: list[dict]) -> str:
+    """Run the tool-use loop for one chat turn; return the guru's text answer.
+
+    Appends the assistant turn and any tool_result turns to ``messages`` in
+    place, so the conversation carries across calls (the user can keep prompting).
+    """
+    text = ""
+    for _ in range(MAX_ITERS):
+        resp = await client.messages.create(
+            model=model,
+            max_tokens=MAX_TOKENS,
+            system=_CHAT_SYSTEM,
+            tools=tools,
+            messages=messages,
+        )
+        messages.append({"role": "assistant", "content": resp.content})
+        tool_uses = [b for b in resp.content if b.type == "tool_use"]
+        text = "".join(b.text for b in resp.content if b.type == "text")
+        if not tool_uses:
+            return text
+        tool_results = []
+        for block in tool_uses:
+            payload = await call_tool(session, block.name, dict(block.input))
+            tool_results.append(
+                {"type": "tool_result", "tool_use_id": block.id, "content": json.dumps(payload)}
+            )
+        messages.append({"role": "user", "content": tool_results})
+    return text or "(reached the tool-call limit without a final answer)"
 
 
 # --------------------------------------------------------------------------- #
@@ -347,16 +407,56 @@ async def dry_run_deal(deal_id: str, csv_path: str | None, region_aware: bool) -
     return out
 
 
-async def dry_run_regions(regions: list[str], csv_path: str | None, region_aware: bool) -> dict:
+async def dry_run_regions(
+    regions: list[str], csv_path: str | None, region_aware: bool, top_n: int = 3
+) -> dict:
     out = []
     async with open_session(csv_path) as session:
         for region in regions:
-            plan = await gather_region_plan(session, region, region_aware)
+            plan = await gather_region_actions(session, region, region_aware, top_n)
             if isinstance(plan, dict) and "error" in plan:
                 out.append({"region": region, "error": plan["error"]})
             else:
-                out.append(_deterministic_priorities(plan))
+                out.append(_deterministic_actions(plan))
     return {"regions": out, "mode": "dry-run (deterministic worklist, no LLM)"}
+
+
+async def chat(model: str, csv_path: str | None, region_aware: bool, opener: str | None) -> int:
+    """Interactive REPL: ask the guru anything; keep prompting. Needs a key.
+
+    ``region_aware`` is surfaced to the model as context; it still passes the
+    flag explicitly on tool calls when it wants the overlay. ``opener`` seeds the
+    first user turn (e.g. the --region preset) so the session starts on-topic.
+    """
+    from anthropic import AsyncAnthropic  # lazy: only needed for the agent path
+
+    client = AsyncAnthropic()
+    async with open_session(csv_path) as session:
+        tools = await anthropic_tool_schema(session)
+        messages: list[dict] = []
+        print("=" * 72)
+        print("  SALES GURU — interactive. Ask e.g. 'what are my top 3 things in NA?'")
+        print("  Type 'exit' or Ctrl-D to quit." + ("  (region-aware ON)" if region_aware else ""))
+        print("=" * 72)
+        pending = opener
+        while True:
+            if pending is not None:
+                user_msg, pending = pending, None
+                print(f"\nyou> {user_msg}")
+            else:
+                try:
+                    user_msg = input("\nyou> ").strip()
+                except EOFError:
+                    print()
+                    break
+                if not user_msg:
+                    continue
+                if user_msg.lower() in ("exit", "quit", ":q"):
+                    break
+            messages.append({"role": "user", "content": user_msg})
+            reply = await _agent_reply(client, session, model, tools, messages)
+            print(f"\nguru> {reply}")
+    return 0
 
 
 # --------------------------------------------------------------------------- #
@@ -381,28 +481,35 @@ def _print_coaching(c: dict) -> None:
         print(f"  → {c['rationale']}")
 
 
+def _fmt_deal_list(deals: list[str], limit: int = 6) -> str:
+    """'D-1, D-2, D-3 (+4 more)' from a list of deal ids."""
+    shown = ", ".join(deals[:limit])
+    extra = len(deals) - limit
+    return f"{shown} (+{extra} more)" if extra > 0 else shown
+
+
 def _print_priorities(p: dict) -> None:
     if p.get("error"):
         print(f"\n  {p.get('region', '')}: {p['error']}")
         return
     print(f"\n  {p['region']} — {p.get('headline', '')}")
-    buckets = [
-        ("Close (fast movers)", "close_fast_movers"),
-        ("Remove risk (get on a call)", "remove_risk"),
-        ("Back on track (stalled/slipped)", "get_back_on_track"),
-    ]
-    for label, key in buckets:
-        items = p.get(key, [])
-        if not items:
-            continue
-        print(f"    {label}:")
-        for it in items:
-            print(f"      • {it['deal_id']}: {it['action']}")
+    for a in p.get("actions", []):
+        tag = "⚡" if a.get("kind") == "opportunity" else "⚠"
+        stake = ""
+        if a.get("arr_at_stake") is not None:
+            count = a.get("deal_count", len(a["deals"]))
+            stake = f" — {count} deals, ${a['arr_at_stake']:,.0f} at stake"
+        owner = f"  [{a['owner']}]" if a.get("owner") else ""
+        print(f"    {a['priority']}. {tag} {a['action']}{stake}{owner}")
+        if a.get("why"):
+            print(f"       ↳ {a['why']}")
+        if a.get("deals"):
+            print(f"       deals: {_fmt_deal_list(a['deals'])}")
 
 
 def _print_region_report(result: dict) -> None:
     print("=" * 72)
-    print("  SALES GURU — REGIONAL PRIORITIES")
+    print("  SALES GURU — TOP THINGS TO DO (by region)")
     mode = result.get("mode")
     if mode:
         print(f"  ({mode})")
@@ -410,13 +517,17 @@ def _print_region_report(result: dict) -> None:
     for p in result["regions"]:
         _print_priorities(p)
     print("\n" + "=" * 72)
-    print("  A prioritized worklist (opportunity + risk), not an attainment")
-    print("  forecast. The rules own every flag; the guru recommends the move.")
+    print("  One action can cover several deals. Ranked by ARR-at-stake × urgency.")
+    print("  A prioritized worklist, not an attainment forecast; rules own every flag.")
 
 
 async def _amain(args: argparse.Namespace) -> int:
     csv_path = args.csv
     ra = args.region_aware
+
+    if args.chat:
+        opener = f"What are my top {args.top_n} things in {args.region}?" if args.region else None
+        return await chat(args.model, csv_path, ra, opener)
 
     if args.deal:
         if args.dry_run:
@@ -428,12 +539,12 @@ async def _amain(args: argparse.Namespace) -> int:
 
     regions = [args.region] if args.region else await _discover_regions(csv_path)
     if args.dry_run:
-        result = await dry_run_regions(regions, csv_path, ra)
+        result = await dry_run_regions(regions, csv_path, ra, args.top_n)
     elif args.region:
-        one = await coach_region(args.region, args.model, csv_path, ra)
+        one = await coach_region(args.region, args.model, csv_path, ra, args.top_n)
         result = {"regions": [one]}
     else:
-        result = await coach_all(regions, args.model, csv_path, ra)
+        result = await coach_all(regions, args.model, csv_path, ra, args.top_n)
     print(json.dumps(result, indent=2)) if args.json else _print_region_report(result)
     return 0
 
@@ -444,8 +555,16 @@ def main(argv: list[str] | None = None) -> int:
     group.add_argument("--deal", help="coach a single deal (e.g. D-10023)")
     group.add_argument("--region", help="prioritize a single region (e.g. NA)")
     group.add_argument("--all", action="store_true", help="prioritize every region")
+    group.add_argument(
+        "--chat",
+        action="store_true",
+        help="interactive chat: ask for your top things, then follow up",
+    )
     parser.add_argument("--model", default=DEFAULT_MODEL, help="Anthropic model id")
     parser.add_argument("--csv", default=None, help="pipeline CSV (else FORECAST_CSV/default)")
+    parser.add_argument(
+        "--top-n", type=int, default=3, help="how many actions per region (default 3)"
+    )
     parser.add_argument("--dry-run", action="store_true", help="deterministic plays, no LLM/key")
     parser.add_argument(
         "--region-aware",
@@ -455,8 +574,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", action="store_true", help="emit JSON")
     args = parser.parse_args(argv)
 
-    if not (args.deal or args.region or args.all):
-        parser.error("choose one of --deal, --region, or --all")
+    if not (args.deal or args.region or args.all or args.chat):
+        parser.error("choose one of --deal, --region, --all, or --chat")
+    if args.chat and args.dry_run:
+        parser.error("--chat is interactive and needs a key; it has no --dry-run")
     if not args.dry_run and not os.environ.get("ANTHROPIC_API_KEY"):
         print(
             "error: ANTHROPIC_API_KEY not set. Use --dry-run for offline "

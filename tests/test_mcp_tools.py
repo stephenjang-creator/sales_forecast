@@ -101,28 +101,35 @@ def test_recommend_plays_not_found() -> None:
     assert "error" in srv.recommend_plays("D-00000-nope")
 
 
-def test_region_action_plan_shape_and_buckets() -> None:
-    plan = srv.region_action_plan("NA", top_n=3)
+def test_region_top_actions_grouped_and_ranked() -> None:
+    plan = srv.region_top_actions("NA", top_n=3)
     assert plan["region"] == "NA"
-    assert {"deals", "flagged", "fast_movers", "stalled_or_slipped"} <= set(plan["totals"].keys())
-    prio = plan["priorities"]
-    for bucket in ("close_fast_movers", "jump_on_calls_to_remove_risk", "get_back_on_track"):
-        assert bucket in prio
-        assert len(prio[bucket]) <= 3  # capped at top_n
-    # De-risk bucket excludes stall/slip; those live in get_back_on_track.
-    for item in prio["get_back_on_track"]:
-        assert item["play"] is not None
-    # Fast movers carry the close play + a flagged marker.
-    for item in prio["close_fast_movers"]:
-        assert item["play"]["rule_id"] == "fast_mover"
-        assert "flagged" in item
+    assert plan["active_deals"] > 0
+    actions = plan["actions"]
+    assert 0 < len(actions) <= 3  # capped at top_n
+    # Ranked by priority_score, descending, and priority is 1..N in order.
+    scores = [a["priority_score"] for a in actions]
+    assert scores == sorted(scores, reverse=True)
+    assert [a["priority"] for a in actions] == list(range(1, len(actions) + 1))
+    for a in actions:
+        assert a["kind"] in ("risk", "opportunity")
+        assert a["deal_count"] == len(a["deals"])  # one action, many deals
+        assert a["deals"], "an action must cover at least one deal"
+        # arr_at_stake is the sum of the covered deals' ARR.
+        assert abs(a["arr_at_stake"] - round(sum(d["arr"] for d in a["deals"]), 0)) < 1.0
+        assert {"title", "first_step", "owner"} <= set(a.keys())
     json.dumps(plan)
 
 
-def test_region_action_plan_region_aware_and_unknown() -> None:
-    aware = srv.region_action_plan("APAC", region_aware=True)
+def test_region_top_actions_default_top_n_is_three() -> None:
+    plan = srv.region_top_actions("NA")
+    assert len(plan["actions"]) <= 3
+
+
+def test_region_top_actions_region_aware_and_unknown() -> None:
+    aware = srv.region_top_actions("APAC", region_aware=True)
     assert aware["region_aware"] is True
-    assert "error" in srv.region_action_plan("Nowhere")
+    assert "error" in srv.region_top_actions("Nowhere")
 
 
 def test_list_deals_flagged_only() -> None:

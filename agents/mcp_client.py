@@ -96,13 +96,13 @@ async def gather_deal_context(
     return {"deal_id": deal_id, "assessment": assessment, "plays": plays}
 
 
-async def gather_region_plan(
-    session: ClientSession, region: str, region_aware: bool = False, top_n: int = 5
+async def gather_region_actions(
+    session: ClientSession, region: str, region_aware: bool = False, top_n: int = 3
 ) -> dict:
-    """The prioritized regional VP worklist (``region_action_plan``), via tools."""
+    """The region's top-N prioritized actions (``region_top_actions``), via tools."""
     return await call_tool(
         session,
-        "region_action_plan",
+        "region_top_actions",
         {"region": region, "region_aware": region_aware, "top_n": top_n},
     )
 

@@ -170,19 +170,33 @@ seed 42); yours will differ if you point `FORECAST_CSV` at your own export.
   owner. For a personalized talk track, run
   `python -m agents.sales_guru --deal D-10023` (or `--dry-run` for the plays alone).
 
-### 17. Regional VP priorities
-> **"I run NA — what are the top things my team should do this week?"**
+### 17. Regional VP priorities — "what are my top 3 things?"
+> **"I run NA — what are the top 3 things my team should do today?"**
 
-- **Call:** `region_action_plan("NA")` (deterministic), or the `sales_guru` agent
-  (`--region NA` / `--all`) to narrate it.
-- **Returns:** three ranked buckets, each capped at `top_n` and carrying the
-  specific play: `close_fast_movers` (empowered-champion / simple-process deals
-  to pull forward, biggest ARR first), `jump_on_calls_to_remove_risk` (flagged
-  deals whose risk isn't a stall/slip — get on a call and run the play, highest
-  risk first), and `get_back_on_track` (deals stalled in stage or slipping their
-  close date — re-engage and reset).
-- **Narration tip:** lead with the single highest-leverage move, then the named
-  deals per bucket. This is a risk/opportunity worklist, **not** an attainment
-  forecast — pair with `bookings_rollup` for the number.
-- **Run the agent:** `python -m agents.sales_guru --all` (one guru per region),
-  or `--all --dry-run` for the deterministic worklist with no key.
+- **Call:** `region_top_actions("NA", top_n=3)` (deterministic), or the
+  `sales_guru` agent (`--region NA` / `--all`) to narrate it.
+- **Returns:** a single ranked list of `actions`. Each action is **one play that
+  can cover several deals** (e.g. "run a MEDDPICC qualification call" across
+  every thin-Commit deal), with `kind` (risk | opportunity), `deal_count`,
+  `arr_at_stake`, the covered `deals`, and a `priority_score`. Actions are ranked
+  by ARR-at-stake weighted by urgency (`config.ACTION_PRIORITY_WEIGHT`), and the
+  top `top_n` (default 3) are returned.
+- **Narration tip:** lead with action #1, state it as an imperative, and name the
+  deals it covers ("Close these 22 fast movers — $935K"). It's a risk/opportunity
+  worklist, **not** an attainment forecast — pair with `bookings_rollup` for the
+  number.
+- **Run the agent:** `python -m agents.sales_guru --region NA` (or `--all`), or
+  add `--dry-run` for the deterministic worklist with no key.
+
+### 18. Ask the guru, then keep prompting (interactive)
+> **"What are my top 3 things in NA?"** → **"Tell me more about #2."** → **"Who
+> owns the first one, and show me those deals."**
+
+- **Run:** `python -m agents.sales_guru --chat` (or `--chat --region NA` to seed
+  the first question). Needs `ANTHROPIC_API_KEY`.
+- **How it works:** a conversational agent with every MCP tool available. It
+  answers the first question via `region_top_actions`, and because the
+  conversation persists, follow-ups ("drill into #2", "assess D-10339") reuse the
+  context and call `assess_deal` / `recommend_plays` / `list_deals` as needed.
+- **Guardrail:** same as every tool — it explains and recommends the play but
+  never changes a flag or invents a deal/number the tools didn't return.
