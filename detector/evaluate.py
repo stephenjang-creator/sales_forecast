@@ -173,13 +173,17 @@ def scorecard_text(scored: pd.DataFrame) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI: ``python -m detector.evaluate <pipeline.csv>``."""
-    args = sys.argv[1:] if argv is None else argv
+    """CLI: ``python -m detector.evaluate <pipeline.csv> [--region-aware]``."""
+    args = list(sys.argv[1:] if argv is None else argv)
+    region_aware = "--region-aware" in args
+    args = [a for a in args if a != "--region-aware"]
     path = Path(args[0]) if args else Path("data/pipeline.csv")
     if not path.exists():
         print(f"error: {path} not found", file=sys.stderr)
         return 1
-    scored = run_path(path)
+    scored = run_path(path, region_aware=region_aware)
+    label = "region-aware" if region_aware else "region-agnostic"
+    print(f"  scoring mode: {label}\n")
     print(scorecard_text(scored))
     return 0
 

@@ -24,6 +24,8 @@ from datetime import date, timedelta
 
 import pandas as pd
 
+import config  # region norms live here so the detector and generator agree
+
 # ----------------------------------------------------------------------
 # Optional Faker -- degrade gracefully to a built-in pool if unavailable.
 # ----------------------------------------------------------------------
@@ -65,9 +67,28 @@ STAGES = ["Discovery", "Qualification", "Proposal", "Negotiation",
 OPEN_STAGES = STAGES[:4]
 STAGE_WEIGHTS = [0.18, 0.22, 0.22, 0.15, 0.14, 0.09]
 
-# Typical days a healthy deal sits in each open stage (for staleness checks)
+# Typical days a healthy deal sits in each open stage (for staleness checks).
 STAGE_NORMAL_DAYS = {"Discovery": 21, "Qualification": 25,
                      "Proposal": 20, "Negotiation": 18}
+
+
+def _region_stage_norm(region, stage):
+    """Typical days in `stage` for `region` -- US short, EMEA long. Shared with
+    the detector via config.REGION_STAGE_NORMAL_DAYS so labels and rules agree."""
+    table = config.REGION_STAGE_NORMAL_DAYS.get(region, {})
+    return table.get(stage, STAGE_NORMAL_DAYS.get(stage, 20))
+
+
+def _region_discount(region, stage):
+    """Sample a healthy discount. APAC discounts early and often as normal
+    practice; other regions rarely discount deeply before value is proven."""
+    if region == "APAC" and stage in ("Discovery", "Qualification"):
+        pool = [0, 0.10, 0.20, 0.30, 0.35, 0.40]
+        weights = [0.20, 0.20, 0.20, 0.15, 0.15, 0.10]
+    else:
+        pool = [0, 0.05, 0.10, 0.15, 0.25, 0.40]
+        weights = [0.40, 0.20, 0.15, 0.10, 0.10, 0.05]
+    return round(random.choices(pool, weights=weights)[0], 2)
 
 MEDDPICC = ["metrics", "economic_buyer", "decision_criteria", "decision_process",
             "paper_process", "identified_pain", "champion", "competition"]
@@ -113,6 +134,7 @@ def _base_record(i, today):
     lo, hi = ARR_RANGE[seg]
     arr = round(random.uniform(lo, hi), -2)
     stage = random.choices(STAGES, weights=STAGE_WEIGHTS)[0]
+    region = random.choices(REGIONS, weights=REGION_WEIGHTS)[0]
 
     created = today - timedelta(days=random.randint(15, 200))
     # base close date: some in past for closed, future for open
@@ -121,8 +143,10 @@ def _base_record(i, today):
     else:
         close = today + timedelta(days=random.randint(5, 90))
 
+    # Healthy deals sit up to their REGION's typical duration for the stage --
+    # so a long-sitting EMEA proposal is normal, a long NA deal is not.
     stage_entry = today - timedelta(
-        days=random.randint(1, STAGE_NORMAL_DAYS.get(stage, 20)))
+        days=random.randint(1, _region_stage_norm(region, stage)))
 
     scores = _meddpicc_scores(stage, healthy=True)
     total, conf = _meddpicc_rollup(scores)
@@ -139,7 +163,7 @@ def _base_record(i, today):
         "deal_id": f"D-{10000 + i}",
         "account": _company(),
         "segment": seg,
-        "region": random.choices(REGIONS, weights=REGION_WEIGHTS)[0],
+        "region": region,
         "arr": arr,
         "stage": stage,
         "forecast_category": fcat,
@@ -149,9 +173,7 @@ def _base_record(i, today):
         "orig_close_date": close,       # for slip detection
         "stage_entry_date": stage_entry,
         "close_date_pushes": 0,
-        "discount_pct": round(random.choices(
-            [0, .05, .10, .15, .25, .40],
-            weights=[.40, .20, .15, .10, .10, .05])[0], 2),
+        "discount_pct": _region_discount(region, stage),
         "is_anomaly": False,
         "anomaly_types": [],
     }
@@ -176,10 +198,15 @@ def inj_slipped_close(rec, today):
 
 
 def inj_stalled_stage(rec, today):
-    """Sitting in an open stage far longer than normal."""
+    """Sitting in an open stage far longer than normal FOR ITS REGION.
+
+    A stalled NA deal sits 3-5x NA's short norm; a stalled EMEA deal sits 3-5x
+    EMEA's long norm. Judged against the global norm this is ambiguous -- which
+    is exactly why the region-aware detector wins.
+    """
     if rec["stage"] not in OPEN_STAGES:
         return False
-    normal = STAGE_NORMAL_DAYS[rec["stage"]]
+    normal = _region_stage_norm(rec["region"], rec["stage"])
     rec["stage_entry_date"] = today - timedelta(days=normal * random.randint(3, 5))
     rec["anomaly_types"].append("stalled_in_stage")
     return True
@@ -213,8 +240,14 @@ def inj_late_stage_no_eb(rec, today):
 
 
 def inj_deep_discount_early(rec, today):
-    """Heavy discount offered before value is established (early stage)."""
+    """Heavy discount offered before value is established (early stage).
+
+    Not injected in APAC: an early deep discount is normal practice there, so it
+    is not an anomaly -- only a region-aware detector gets this right.
+    """
     if rec["stage"] not in ("Discovery", "Qualification"):
+        return False
+    if rec["region"] in config.REGION_DISCOUNT_TOLERANT:
         return False
     rec["discount_pct"] = round(random.uniform(0.30, 0.50), 2)
     rec["anomaly_types"].append("premature_deep_discount")

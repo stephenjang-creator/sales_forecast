@@ -95,14 +95,15 @@ def _region_aware(row: dict) -> bool:
     return bool(row.get("_region_aware", False))
 
 
-def _stale_multiplier(row: dict) -> float:
-    """Effective staleness multiplier for a row (region-aware if enabled)."""
-    if not _region_aware(row):
-        return config.STALE_MULTIPLIER
-    region, stage = _str(row, "region"), _str(row, "stage")
-    if (region, stage) in config.REGION_STAGE_STALE_MULTIPLIER:
-        return config.REGION_STAGE_STALE_MULTIPLIER[(region, stage)]
-    return config.REGION_STALE_MULTIPLIER.get(region, config.STALE_MULTIPLIER)
+def _stage_norm(row: dict) -> int:
+    """Typical days-in-stage for a row: the region's own norm when region-aware,
+    else the global default. US runs short, EMEA long (esp. Proposal)."""
+    stage = _str(row, "stage")
+    if _region_aware(row):
+        table = config.REGION_STAGE_NORMAL_DAYS.get(_str(row, "region"))
+        if table and stage in table:
+            return table[stage]
+    return config.STAGE_NORMAL_DAYS[stage]
 
 
 # --------------------------------------------------------------------------- #
@@ -126,13 +127,12 @@ def rule_stalled_in_stage(row: dict) -> RuleHit | None:
     stage = _str(row, "stage")
     if stage not in config.OPEN_STAGES:
         return None
-    normal = config.STAGE_NORMAL_DAYS[stage]
+    normal = _stage_norm(row)
     days = _int(row, "days_in_stage")
-    mult = _stale_multiplier(row)
-    if days <= normal * mult:
+    if days <= normal * config.STALE_MULTIPLIER:
         return None
     severity = "high" if days > normal * 4 else "medium"
-    region_note = f" ({_str(row, 'region')} threshold {mult:g}×)" if _region_aware(row) else ""
+    region_note = f" ({_str(row, 'region')} norm)" if _region_aware(row) else ""
     reason = (
         f"Stuck in {stage} for {days} days -- {days / normal:.1f}× the "
         f"{normal}-day norm for this stage{region_note}."

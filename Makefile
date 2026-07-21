@@ -1,4 +1,4 @@
-.PHONY: data history test eval app mcp attainment attainment-dry
+.PHONY: data history test eval eval-region app mcp attainment attainment-dry
 
 # Regenerate the bundled datasets (already committed; only needed to reseed).
 data: history
@@ -12,9 +12,13 @@ history:
 test:
 	python -m pytest -q
 
-# Print the evaluation scorecard against the bundled labeled CSV.
+# Print the evaluation scorecard (region-agnostic: one global stage norm).
 eval:
 	python -m detector.evaluate data/pipeline.csv
+
+# Print the scorecard with region-aware norms (recommended for the regional data).
+eval-region:
+	python -m detector.evaluate data/pipeline.csv --region-aware
 
 # Launch the two-mode Streamlit UI.
 app:

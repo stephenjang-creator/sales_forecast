@@ -204,27 +204,27 @@ def test_imminent_close_ignores_closed() -> None:
 # Region-aware thresholds (opt-in overlay; default off = unchanged)
 # --------------------------------------------------------------------------- #
 def test_stalled_region_aware_na_flags_sooner() -> None:
-    # Discovery norm 21. 50 days: 2.38x -> clean under default 2.5x, but NA's
-    # 2.0x threshold (42) fires. Region-aware must be explicitly on.
-    base = base_row(stage="Discovery", days_in_stage=50, region="NA")
-    assert rule_stalled_in_stage(base) is None  # default (region-agnostic)
+    # NA norm for Discovery is 12 (fast), global is 21. 40 days: clean under the
+    # global 2.5x threshold (52.5), but stalled against NA's norm (12*2.5=30).
+    base = base_row(stage="Discovery", days_in_stage=40, region="NA")
+    assert rule_stalled_in_stage(base) is None  # default (global norm)
     hit = rule_stalled_in_stage({**base, "_region_aware": True})
     assert hit is not None and hit.rule_id == "stalled_in_stage"
-    assert "NA threshold 2×" in hit.reason
+    assert "NA norm" in hit.reason
 
 
 def test_stalled_region_aware_emea_more_slack() -> None:
-    # 60 days in Discovery = 2.86x: fires under default 2.5x, but EMEA's 3.5x
-    # (73.5) gives it slack and it does not fire.
-    base = base_row(stage="Discovery", days_in_stage=60, region="EMEA")
-    assert rule_stalled_in_stage(base) is not None  # default fires
+    # EMEA Proposal norm is 70 (proposals linger); global is 20. 60 days fires
+    # against the global norm (>50) but is normal for EMEA (<70*2.5).
+    base = base_row(stage="Proposal", days_in_stage=60, region="EMEA")
+    assert rule_stalled_in_stage(base) is not None  # global norm over-flags
     assert rule_stalled_in_stage({**base, "_region_aware": True}) is None
 
 
-def test_stalled_region_aware_emea_proposal_extra_slack() -> None:
-    # EMEA Proposal gets a 5.0x threshold; 80 days (4.0x) does not fire.
-    row = base_row(stage="Proposal", days_in_stage=80, region="EMEA", _region_aware=True)
-    assert rule_stalled_in_stage(row) is None
+def test_stalled_region_aware_emea_still_catches_real_stall() -> None:
+    # A truly stalled EMEA proposal (200 days > 70*2.5=175) still fires.
+    row = base_row(stage="Proposal", days_in_stage=200, region="EMEA", _region_aware=True)
+    assert rule_stalled_in_stage(row) is not None
 
 
 def test_premature_region_aware_apac_tolerated() -> None:
@@ -241,10 +241,10 @@ def test_premature_region_aware_na_still_flags() -> None:
 
 
 def test_engine_region_aware_does_not_leak_flag_column() -> None:
-    rows = [base_row(deal_id="d", stage="Discovery", days_in_stage=50, region="NA")]
+    rows = [base_row(deal_id="d", stage="Discovery", days_in_stage=40, region="NA")]
     scored = run(pd.DataFrame(rows), region_aware=True)
     assert "_region_aware" not in scored.columns
-    assert scored.iloc[0]["predicted_anomaly"]  # NA 2.0x flags this stall
+    assert scored.iloc[0]["predicted_anomaly"]  # NA norm (12) flags this stall
 
 
 # --------------------------------------------------------------------------- #

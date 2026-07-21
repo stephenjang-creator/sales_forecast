@@ -66,21 +66,18 @@ ESTIMATE_BAND = 0.20
 
 # --------------------------------------------------------------------------- #
 # Region-aware thresholds (opt-in business overlay).
-# Regions run their sales motion differently; the labeled synthetic data is
-# region-agnostic, so these overrides apply ONLY when a caller asks for them
-# (`engine.run(df, region_aware=True)` / the UI toggle). Off by default so the
-# headline scorecard stays region-agnostic and reproducible.
+# Regions run their sales motion differently, and the demo data is generated to
+# match (US moves fast, EMEA runs long and lingers in Proposal, APAC discounts
+# early as normal practice -- see generate_forecast_data.py, which imports the
+# norms below). When region_aware is enabled, staleness is judged against each
+# region's own typical stage duration instead of the global STAGE_NORMAL_DAYS.
 # --------------------------------------------------------------------------- #
-# Per-region staleness multiplier; falls back to STALE_MULTIPLIER when absent.
-# US deals move fast -> flag stalls sooner; EMEA deals run long -> more slack.
-REGION_STALE_MULTIPLIER = {
-    "NA": 2.0,
-    "EMEA": 3.5,
-}
-# Most-specific override: (region, stage) -> multiplier. EMEA proposals in
-# particular legitimately linger, so give that stage extra room.
-REGION_STAGE_STALE_MULTIPLIER = {
-    ("EMEA", "Proposal"): 5.0,
+# Typical days in each open stage, per region. Falls back to STAGE_NORMAL_DAYS.
+REGION_STAGE_NORMAL_DAYS = {
+    "NA": {"Discovery": 12, "Qualification": 14, "Proposal": 11, "Negotiation": 10},
+    "EMEA": {"Discovery": 30, "Qualification": 36, "Proposal": 70, "Negotiation": 34},
+    "APAC": {"Discovery": 21, "Qualification": 25, "Proposal": 20, "Negotiation": 18},
+    "LATAM": {"Discovery": 24, "Qualification": 28, "Proposal": 23, "Negotiation": 21},
 }
 # Regions where an early deep discount is normal practice -> do not flag
 # premature_deep_discount there.
