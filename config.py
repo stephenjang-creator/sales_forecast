@@ -61,6 +61,12 @@ STAGE_WIN_RATE = {
 # An open deal the detector flagged has its expected value cut by this fraction
 # (hygiene/qualification risk lowers the odds it lands as forecast).
 FLAGGED_RISK_HAIRCUT = 0.40
+# Symmetric to the haircut: an open fast_mover (empowered champion + simple
+# process -> likely to close early) has its expected value lifted by this
+# fraction, capped so effective win probability never exceeds 1.0. This puts the
+# "potential movers" upside into the projection, not just the narration. A deal
+# that is BOTH flagged and a fast mover takes the risk haircut (risk dominates).
+FAST_MOVER_UPLIFT = 0.25
 # Half-width of the low/high band around the likely estimate (±fraction).
 ESTIMATE_BAND = 0.20
 

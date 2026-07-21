@@ -330,8 +330,25 @@ def test_pipeline_by_period_marks_current() -> None:
     buckets = result["periods"]
     assert buckets and any(b["is_current"] for b in buckets)
     for b in buckets:
-        assert {"won_arr", "open_arr", "risk_adjusted_open_arr", "open_deals"} <= set(b)
+        assert {
+            "won_arr",
+            "open_arr",
+            "risk_adjusted_open_arr",
+            "flagged_open_arr",
+            "fast_mover_open_arr",
+            "open_deals",
+        } <= set(b)
     json.dumps(result)
+
+
+def test_pipeline_by_period_fast_mover_uplift() -> None:
+    # NA has open fast movers; their uplift must lift risk_adjusted above the
+    # naive (weighted - full haircut) floor, and fast_mover_open_arr is surfaced.
+    cur = next(b for b in srv.pipeline_by_period("quarter", "NA")["periods"] if b["is_current"])
+    assert cur["fast_mover_open_arr"] > 0
+    # Uplift pushes risk-adjusted above weighted-minus-haircut-on-everything.
+    floor = cur["weighted_open_arr"] * (1 - 0.40)
+    assert cur["risk_adjusted_open_arr"] > floor
 
 
 def test_bookings_history_and_comparison() -> None:

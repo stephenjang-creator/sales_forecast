@@ -75,8 +75,9 @@ def pipeline_by_period(scored: pd.DataFrame, grain: str, region: str | None = No
 
     Each bucket carries won ARR (already Closed Won), open pipeline ARR, the
     stage-weighted open ARR, the risk-adjusted open ARR (weighted, minus a
-    haircut on flagged deals), flagged open ARR, and open-deal count. The current
-    in-progress period is marked ``is_current``.
+    haircut on flagged deals and plus an uplift on fast movers), flagged open ARR,
+    fast-mover open ARR, and open-deal count. The current in-progress period is
+    marked ``is_current``.
     """
     df = scored
     if region is not None:
@@ -86,6 +87,7 @@ def pipeline_by_period(scored: pd.DataFrame, grain: str, region: str | None = No
 
     open_stages = set(config.OPEN_STAGES)
     haircut = config.FLAGGED_RISK_HAIRCUT
+    uplift = config.FAST_MOVER_UPLIFT
     buckets: dict[str, dict] = {}
     for row in df.to_dict("records"):
         key = period_key(_to_date(row["close_date"]), grain)
@@ -98,6 +100,7 @@ def pipeline_by_period(scored: pd.DataFrame, grain: str, region: str | None = No
                 "weighted_open_arr": 0.0,
                 "risk_adjusted_open_arr": 0.0,
                 "flagged_open_arr": 0.0,
+                "fast_mover_open_arr": 0.0,
                 "open_deals": 0,
             },
         )
@@ -106,14 +109,24 @@ def pipeline_by_period(scored: pd.DataFrame, grain: str, region: str | None = No
         if stage == "Closed Won":
             b["won_arr"] += arr
         if stage in open_stages:
+            flagged = bool(row["predicted_anomaly"])
+            fast_mover = bool(row.get("fast_mover", False))
             weighted = arr * _win_rate(stage)
-            adjusted = weighted * (1 - haircut) if row["predicted_anomaly"] else weighted
+            # Risk dominates: a flagged fast mover takes the haircut, not the uplift.
+            if flagged:
+                adjusted = weighted * (1 - haircut)
+            elif fast_mover:
+                adjusted = min(weighted * (1 + uplift), arr)
+            else:
+                adjusted = weighted
             b["open_arr"] += arr
             b["weighted_open_arr"] += weighted
             b["risk_adjusted_open_arr"] += adjusted
             b["open_deals"] += 1
-            if row["predicted_anomaly"]:
+            if flagged:
                 b["flagged_open_arr"] += arr
+            elif fast_mover:
+                b["fast_mover_open_arr"] += arr
 
     current = current_period_key(scored if region is None else df, grain)
     out = []
@@ -261,8 +274,9 @@ def bookings_rollup(
         "open_pipeline_arr": round(float(cur["open_arr"]), 0),
         "open_deals": int(cur["open_deals"]),
         "basis": (
-            "won-so-far + risk-adjusted expected-to-close "
-            f"(stage win-rates, {config.FLAGGED_RISK_HAIRCUT:.0%} haircut on flagged deals)"
+            "won-so-far + risk-adjusted expected-to-close (stage win-rates, "
+            f"{config.FLAGGED_RISK_HAIRCUT:.0%} haircut on flagged deals, "
+            f"{config.FAST_MOVER_UPLIFT:.0%} uplift on fast movers)"
         ),
     }
 

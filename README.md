@@ -292,9 +292,11 @@ model estimate.
    and history (`bookings_rollup`, `period_comparison`, `assess_region`,
    `list_deals`);
 2. anchors on deterministic tool math — for the current period,
-   **won-so-far + risk-adjusted expected-to-close** (stage win-rates × ARR minus a
-   haircut on flagged deals; win-rates/haircut in `config.py`), measured against
-   the period's **quota** from `data/targets.csv`;
+   **won-so-far + risk-adjusted expected-to-close** (stage win-rates × ARR, minus a
+   haircut on flagged deals **and plus an uplift on fast movers** — so the known
+   risks pull the number down and the potential movers pull it up; win-rate,
+   haircut, and uplift all in `config.py`), measured against the period's
+   **quota** from `data/targets.csv`;
 3. returns a structured projection for **this month and this quarter**
    (projected bookings, attainment %, YoY change) plus key risks;
 
@@ -314,12 +316,12 @@ make attainment-dry                          # NO key: deterministic tool rollup
 and get real numbers offline. Sample offline output on the bundled data:
 
 ```
-  NA     This month:   $596,585   (48% attain, YoY -42%) [2026-07]
-         This quarter: $2,774,596 (57% attain, YoY -35%) [2026-Q3]
-  EMEA   This month:   $177,194   (22% attain, YoY -76%) [2026-07]
-         This quarter: $1,517,796 (49% attain, YoY -45%) [2026-Q3]
+  NA     This month:   $608,894   (49% attain, YoY -41%) [2026-07]
+         This quarter: $2,850,602 (58% attain, YoY -33%) [2026-Q3]
+  EMEA   This month:   $192,811   (24% attain, YoY -74%) [2026-07]
+         This quarter: $1,571,170 (51% attain, YoY -43%) [2026-Q3]
   …
-  PORTFOLIO  month $988,776   quarter $5,651,004
+  PORTFOLIO  month $1,039,974   quarter $5,865,807
 ```
 
 **Read the current period as pace, not a final result.** It's in progress and

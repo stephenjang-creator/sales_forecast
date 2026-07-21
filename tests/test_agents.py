@@ -65,6 +65,24 @@ def test_baseline_empty() -> None:
     assert out["expected_bookings"]["likely"] == 0
 
 
+def test_baseline_fast_mover_uplift_symmetry() -> None:
+    base = {"arr": 100_000, "stage": "Negotiation", "forecast_category": "Commit"}
+    plain = baseline_from_deals([{**base, "predicted_anomaly": False, "signals": []}])
+    mover = baseline_from_deals([{**base, "predicted_anomaly": False, "signals": ["fast_mover"]}])
+    flagged = baseline_from_deals([{**base, "predicted_anomaly": True, "signals": []}])
+
+    # A fast mover lifts the estimate above plain; a flagged deal cuts it below.
+    assert mover["expected_bookings"]["likely"] > plain["expected_bookings"]["likely"]
+    assert flagged["expected_bookings"]["likely"] < plain["expected_bookings"]["likely"]
+    assert mover["mover_uplift_arr"] > 0 and mover["risk_haircut_arr"] == 0
+    assert flagged["risk_haircut_arr"] > 0 and flagged["mover_uplift_arr"] == 0
+    # Uplift never books more than the deal's ARR.
+    assert mover["expected_bookings"]["likely"] <= base["arr"]
+    # Risk dominates: a flagged fast mover takes the haircut, gets no uplift.
+    both = baseline_from_deals([{**base, "predicted_anomaly": True, "signals": ["fast_mover"]}])
+    assert both["risk_haircut_arr"] > 0 and both["mover_uplift_arr"] == 0
+
+
 def test_aggregate_sums_regions() -> None:
     preds = [
         {"region": "NA", "month": {"projected_bookings": 2}, "quarter": {"projected_bookings": 5}},
