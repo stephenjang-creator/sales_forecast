@@ -25,7 +25,10 @@ STAGE_NORMAL_DAYS = {
     "Negotiation": 18,
 }
 # days_in_stage > normal * this => stalled.
-STALE_MULTIPLIER = 3
+# Tuned 3 -> 2.5: healthy deals never exceed 1.0x the stage norm in the data, so
+# 2.5x keeps precision at 1.00 while catching genuinely stalled deals that sit
+# just under the old 3x line (recall 0.60 -> 1.00). See TUNING.md.
+STALE_MULTIPLIER = 2.5
 
 # close_date_pushes >= this => the deal has slipped.
 SLIP_PUSHES_MIN = 2

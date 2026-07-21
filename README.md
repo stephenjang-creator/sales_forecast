@@ -19,35 +19,34 @@ with `make eval`:
 
 | Metric | Value |
 | --- | --- |
-| Precision | 0.887 |
-| Recall | 0.925 |
-| F1 | 0.905 |
-| Confusion (TP / FP / FN / TN) | 86 / 11 / 7 / 496 |
+| Precision | 0.893 |
+| Recall | 0.989 |
+| F1 | 0.939 |
+| Confusion (TP / FP / FN / TN) | 92 / 11 / 1 / 496 |
 
 ### Per-rule
 
 | Rule | Precision | Recall | Fired | Labeled | Correct |
 | --- | --- | --- | --- | --- | --- |
 | slipped_close_date | 1.000 | 1.000 | 20 | 20 | 20 |
-| stalled_in_stage | 1.000 | 0.600 | 15 | 25 | 15 |
+| stalled_in_stage | 1.000 | 1.000 | 25 | 25 | 25 |
 | commit_low_meddpicc | 0.688 | 0.957 | 32 | 23 | 22 |
 | late_stage_no_economic_buyer | 0.765 | 1.000 | 17 | 13 | 13 |
 | premature_deep_discount | 0.462 | 1.000 | 26 | 12 | 12 |
 | imminent_close_no_paper_process | 1.000 | 1.000 | 25 | 25 | 25 |
 
-**Reading the numbers, honestly:**
+**Reading the numbers, honestly** (see [`TUNING.md`](TUNING.md) for the before/after):
 
-- **`stalled_in_stage` recall is 0.600 by design.** The rule fires on
-  `days_in_stage > normal × 3` (the SPEC threshold), while the data generator
-  injects stalls at `normal × {3, 4, 5}`. The `× 3` cases land exactly on the
-  boundary and a strict `>` skips them. We keep the SPEC's literal operator
-  rather than quietly widening it to `>=` — the threshold lives in
-  `config.STALE_MULTIPLIER` if you want to retune it.
-- **`premature_deep_discount` precision (~0.46) is real, not a bug.** A slice of
-  naturally-generated deals genuinely clear the threshold (e.g. a legitimate 40%
-  discount early in the cycle), so the rule correctly fires even though that deal
-  wasn't *injected* as an anomaly. Same story, milder, for `commit_low_meddpicc`.
-  These are defensible "worth a look" flags, not false alarms.
+- **`stalled_in_stage` was tuned to recall 1.00.** `config.STALE_MULTIPLIER` was
+  lowered `3 → 2.5`: healthy deals never exceed 1.0× the stage norm in the data,
+  so this catches every genuinely stalled deal (previously recall 0.60) at zero
+  precision cost.
+- **`premature_deep_discount` precision (~0.46) is left as-is, on purpose.** Its
+  false positives are *natural* 40% catalog discounts that are statistically
+  identical to the injected "premature" ones on every qualification feature — so
+  there's no principled condition that raises precision without overfitting to
+  the generator or cratering recall. We flag them honestly rather than fit noise.
+  Same "worth a look" story, milder, for `commit_low_meddpicc`.
 
 _(Numbers regenerate with the dataset; rerun `make data && make eval` to refresh.)_
 
