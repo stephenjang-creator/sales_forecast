@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { askAgent, exportCsv, fetchForecast } from "./api.js";
 import { ACCENT, C } from "./tokens.js";
 import { inTimeframe, sumPipeline, tfLabel, tfShort } from "./time.js";
+import { exportExecutiveBrief } from "./brief.js";
 import Header from "./components/Header.jsx";
 import AgentBar from "./components/AgentBar.jsx";
 import Summary from "./components/Summary.jsx";
@@ -46,12 +47,8 @@ export default function App() {
   }
 
   function onShare() {
-    if (!data) return;
-    const top = data.deals.filter((d) => d.risk >= 5).slice(0, 5);
-    const brief =
-      `Intelligent Forecast brief\n${data.narrative}\n\nTop at-risk deals:\n` +
-      top.map((d) => `• ${d.account} (${d.region}) — risk ${d.risk}, ${d.amountStr}, ${d.fc}`).join("\n");
-    navigator.clipboard?.writeText(brief);
+    // One-page PDF executive summary, scoped to the selected timeframe.
+    exportExecutiveBrief(data, timeframe);
   }
 
   if (error)

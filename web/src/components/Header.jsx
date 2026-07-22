@@ -103,8 +103,12 @@ export default function Header({ onExport, onShare, timeframe, onTimeframe }) {
         <button onClick={onExport} style={btn.outline}>
           Export CSV
         </button>
-        <button onClick={onShare} style={btn.filled}>
-          Share brief
+        <button
+          onClick={onShare}
+          title="Download a one-page PDF executive summary for leadership"
+          style={btn.filled}
+        >
+          Executive PDF
         </button>
       </div>
     </div>
