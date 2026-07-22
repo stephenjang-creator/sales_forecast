@@ -342,7 +342,7 @@ deterministic, non-anomaly classifiers driven by **champion seniority** and
 | --- | --- | --- |
 | **`fast_mover`** | opportunity | Champion is **Director+** *and* the process is **simple** (≤1 approval layer, no C-suite gate) — likely to close quickly |
 | **`complex_deal`** | risk / duration | **C-suite** sign-off *or* **≥3** approval layers — expect a longer, less predictable cycle (the data reflects it: these run longer) |
-| **`meeting_at_risk`** | risk / cadence | Next meeting is **more than a week out** (`NEXT_MEETING_MAX_DAYS`) *or* **none is booked** — momentum is slipping; run a **value touch** to pull a sooner next step in |
+| **`meeting_at_risk`** | risk / cadence | Next meeting is **more than a week out** (`NEXT_MEETING_MAX_DAYS`) → value touch to pull it sooner; *or* **none is booked** → prioritized **value touch to book one and land the deal's top play in it** |
 
 Signals aren't scored against `is_anomaly` (a fast mover is *good*, and
 `meeting_at_risk` fires on ~40% of open deals — far too broad to be a scored
@@ -350,9 +350,15 @@ anomaly) — they're deterministic derivations surfaced for triage. `engine.run`
 adds `signals`, `fast_mover`, `complex_deal`, and `meeting_at_risk` columns; the
 UI shows counts + tables and per-deal badges; and the MCP layer exposes them
 (`signals_summary`, `list_deals(signal="meeting_at_risk")`, and `assess_deal`'s
-`decision_profile` + `signals`). `meeting_at_risk` maps to a **value-touch play**,
-so it shows up in `recommend_plays` and the regional worklist alongside the
-anomaly plays. Thresholds live in `config.py`.
+`decision_profile` + `signals`). `meeting_at_risk` maps to a **value-touch play**
+that adapts to the deal: a meeting merely too far out gets a *pull-sooner* touch,
+but **when no meeting is booked nothing can advance**, so the play becomes the
+**prioritized first move** — book the meeting with a value touch **and land the
+deal's top play in it** (understand the paper process + timeline, close the
+MEDDPICC gaps, get the economic buyer in the room). It's prepended in
+`recommend_plays` (ahead of the anomaly plays, which become the meeting's agenda)
+and, in the regional worklist, no-meeting deals group under that book-it action
+with each deal's top risk named. Thresholds live in `config.py`.
 
 ### Region-aware thresholds (opt-in)
 

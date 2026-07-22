@@ -138,23 +138,54 @@ FAST_MOVER_PLAY = Play(
     owner="rep",
 )
 
-# The motion for a deal whose next meeting is too far out (or missing): a value
-# touch to pull a sooner next step in. Not an anomaly play -- it responds to the
-# ``meeting_at_risk`` signal -- so it lives here with the other signal play.
-# ``rule_id`` doubles as the signal id.
+# Two motions for the ``meeting_at_risk`` signal, depending on whether a meeting
+# is booked. Neither is an anomaly play -- they respond to the signal -- so they
+# live here with the other signal plays. ``rule_id`` doubles as the signal id.
+#
+# Meeting booked but too far out: a value touch to pull a sooner next step in.
 VALUE_TOUCH_PLAY = Play(
     rule_id="meeting_at_risk",
-    title="Run a value touch to book a sooner next step",
-    why="A next meeting more than a week out (or none) means momentum is slipping.",
+    title="Run a value touch to pull the next meeting sooner",
+    why="The next meeting is more than a week out -- momentum slips before then.",
     actions=(
         "Reach out with a value touch -- a relevant insight, ROI data point, or "
         "customer story -- not a 'just checking in' note.",
-        "Propose a specific next step in the next few days tied to the buyer's "
+        "Propose a sooner working session in the next few days tied to the buyer's "
         "priorities, and get it on the calendar with an agenda.",
         "If the champion goes quiet, multi-thread to a second contact to keep the " "deal moving.",
     ),
     owner="rep",
 )
+
+# NO meeting on the calendar: nothing can advance until one is booked, so the
+# value touch does double duty -- it books the meeting AND sets it up to land the
+# deal's top play (understand the paper process + timeline, close the MEDDPICC
+# gaps, get the economic buyer in the room, ...). This is the prioritized first
+# move for a no-meeting deal; the deal's anomaly plays are the detail to run in it.
+NO_MEETING_PLAY = Play(
+    rule_id="meeting_at_risk",
+    title="Book the next meeting with a value touch -- then land the play in it",
+    why="No next meeting is booked, so nothing advances; the value touch restarts "
+    "momentum and carries the deal's top play into the meeting.",
+    actions=(
+        "No next meeting is booked -- lead with a value touch (a relevant insight, "
+        "ROI data point, or customer story) to get a working session on the "
+        "calendar this week.",
+        "Set that meeting's agenda to the deal's top play -- e.g. understand the "
+        "paper process and timeline, close the weakest MEDDPICC gaps, or get the "
+        "economic buyer in the room -- so the touch also moves the deal forward.",
+        "Lock a same-week next step before the call ends so there's no gap the deal "
+        "can stall in.",
+    ),
+    owner="rep",
+)
+
+
+def meeting_play(has_meeting: bool) -> Play:
+    """The ``meeting_at_risk`` play for a deal: pull a far-out meeting sooner when
+    one is booked, else book one with a value touch AND land the top play in it."""
+    return VALUE_TOUCH_PLAY if has_meeting else NO_MEETING_PLAY
+
 
 # Rules that mean a deal has come off the rails (stalled or slipped) -- the
 # "get it back on track" bucket of a regional action plan.
