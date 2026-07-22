@@ -73,6 +73,63 @@ function trendChart(bk) {
     </div>`;
 }
 
+function regionProjection(data, timeframe, asOf, tl) {
+  const byRegion = data.pipelineByMonthByRegion || {};
+  const order = data.regionOrder || Object.keys(byRegion);
+  const rows = order
+    .filter((r) => byRegion[r])
+    .map((r) => ({ region: r, ...sumPipeline(byRegion[r], timeframe, asOf) }))
+    .filter((x) => x.booked || x.open || x.projected || x.atRisk)
+    .sort((a, b) => b.projected - a.projected);
+  if (!rows.length) return "";
+  const total = rows.reduce(
+    (t, x) => ({
+      booked: t.booked + x.booked,
+      open: t.open + x.open,
+      projected: t.projected + x.projected,
+      atRisk: t.atRisk + x.atRisk,
+      openDeals: t.openDeals + x.openDeals,
+    }),
+    { booked: 0, open: 0, projected: 0, atRisk: 0, openDeals: 0 }
+  );
+  const num = (v, opts = {}) =>
+    `<td style="padding:5px 8px;text-align:right;font-family:'IBM Plex Mono',ui-monospace,monospace;${opts.style || ""}">${money(v)}</td>`;
+  const body = rows
+    .map(
+      (x) => `
+      <tr style="border-top:1px solid ${LINE}">
+        <td style="padding:5px 8px;font-weight:600;color:${INK}">${esc(x.region)}</td>
+        ${num(x.booked, { style: `color:${GREEN}` })}
+        ${num(x.open)}
+        ${num(x.projected, { style: "font-weight:700" })}
+        ${num(x.atRisk, { style: `color:${AMBER}` })}
+      </tr>`
+    )
+    .join("");
+  const totalRow = `
+      <tr style="border-top:2px solid ${INK}">
+        <td style="padding:5px 8px;font-weight:700;color:${INK}">Total</td>
+        ${num(total.booked, { style: `color:${GREEN};font-weight:600` })}
+        ${num(total.open, { style: "font-weight:600" })}
+        ${num(total.projected, { style: "font-weight:700" })}
+        ${num(total.atRisk, { style: `color:${AMBER};font-weight:600` })}
+      </tr>`;
+  return `
+    <div style="margin-bottom:16px">
+      <h2>Projection by region — ${esc(tl)}</h2>
+      <table>
+        <thead><tr>
+          <th>Region</th>
+          <th style="text-align:right">Booked</th>
+          <th style="text-align:right">Open pipeline</th>
+          <th style="text-align:right">Projected</th>
+          <th style="text-align:right">At risk</th>
+        </tr></thead>
+        <tbody>${body}${totalRow}</tbody>
+      </table>
+    </div>`;
+}
+
 function momentumCell(label, value, pct) {
   return `
     <div style="flex:1;text-align:left">
@@ -170,6 +227,9 @@ function buildHtml(data, timeframe) {
     ${kpiCard("Projected · " + tl, money(p.projected), "booked + risk-adjusted", INK)}
     ${kpiCard("At risk · " + tl, money(p.atRisk), flaggedCount + " flagged" + (totalDeals ? " of " + totalDeals : ""), AMBER)}
   </div>
+
+  <!-- Projection by region -->
+  ${regionProjection(data, timeframe, asOf, tl)}
 
   <!-- Bookings momentum -->
   <div style="margin-bottom:16px">

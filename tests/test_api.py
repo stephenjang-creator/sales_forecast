@@ -136,6 +136,10 @@ def test_pipeline_by_month_in_payload() -> None:
     assert expected <= set(b.keys())
     # Buckets are chronological and keyed by calendar month.
     assert b["period"][:4].isdigit() and b["period"][4] == "-"
+    # Per-region buckets back the executive PDF's projection-by-region table.
+    byr = p["pipelineByMonthByRegion"]
+    assert set(byr) == set(p["regionOrder"])
+    assert byr["NAM"] and expected <= set(byr["NAM"][0].keys())
 
 
 def test_bookings_summary_shape() -> None:

@@ -351,11 +351,19 @@ def fast_mover() -> dict | None:
 def full_payload() -> dict:
     """Everything the dashboard needs in one call."""
     deals = flagged_deals()
+    scored = _scored()
+    has_region = "region" in scored.columns
+    by_region = (
+        {r: periods.pipeline_by_period(scored, "month", r) for r in REGION_ORDER}
+        if has_region
+        else {}
+    )
     return {
         "deals": deals,
         "bookedDeals": booked_deals(),
         "bookings": bookings_summary(),
-        "pipelineByMonth": periods.pipeline_by_period(_scored(), "month"),
+        "pipelineByMonth": periods.pipeline_by_period(scored, "month"),
+        "pipelineByMonthByRegion": by_region,
         **kpis_and_summary(deals),
         "fastMover": fast_mover(),
         "scorecard": scorecard(),
