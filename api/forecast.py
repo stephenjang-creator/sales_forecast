@@ -360,6 +360,7 @@ def full_payload() -> dict:
     )
     return {
         "deals": deals,
+        "totalDeals": int(len(scored)),
         "bookedDeals": booked_deals(),
         "bookings": bookings_summary(),
         "pipelineByMonth": periods.pipeline_by_period(scored, "month"),

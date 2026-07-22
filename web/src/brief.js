@@ -160,9 +160,7 @@ function buildHtml(data, timeframe) {
 
   const bk = data.bookings || {};
   const f1 = (data.scorecard?.metrics || []).find((m) => m.label === "F1")?.value || "—";
-  const totalDeals = /of (\d+)/.exec(
-    (data.kpis || []).find((k) => /flagged/i.test(k.label))?.sub || ""
-  )?.[1];
+  const totalDeals = data.totalDeals;
   const flaggedCount = data.deals.length;
 
   const rows =
