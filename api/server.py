@@ -13,6 +13,7 @@ The core is offline; set ANTHROPIC_API_KEY to enable LLM-backed agent answers.
 from __future__ import annotations
 
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -57,6 +58,9 @@ app.add_middleware(
 
 class AskRequest(BaseModel):
     query: str
+    # Optional bring-your-own Anthropic key: used only to answer THIS request and
+    # never stored, logged, or persisted server-side.
+    apiKey: str | None = None
 
 
 @app.get("/api/health")
@@ -66,12 +70,17 @@ def health() -> dict:
 
 @app.get("/api/forecast")
 def get_forecast() -> dict:
-    return forecast.full_payload()
+    payload = forecast.full_payload()
+    # Tell the UI whether the server already has a key (so it can offer LLM answers
+    # directly) or is in demo mode (so it can invite a bring-your-own key).
+    payload["serverHasKey"] = bool(os.environ.get("ANTHROPIC_API_KEY"))
+    return payload
 
 
 @app.post("/api/ask")
 def post_ask(req: AskRequest) -> dict:
-    return agents_web.ask(req.query, forecast.flagged_deals())
+    # req.apiKey is passed straight through for a single call and never retained.
+    return agents_web.ask(req.query, forecast.flagged_deals(), api_key=req.apiKey)
 
 
 if _DIST.is_dir():

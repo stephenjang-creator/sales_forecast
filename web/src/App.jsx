@@ -19,6 +19,9 @@ export default function App() {
   const [query, setQuery] = useState("");
   const [result, setResult] = useState(null);
   const [asking, setAsking] = useState(false);
+  // Bring-your-own Anthropic key: kept in memory for this session only (never
+  // persisted to storage), passed per-request, and never saved server-side.
+  const [apiKey, setApiKey] = useState("");
   const [filters, setFilters] = useState({ tiers: [], regions: [], segments: [] });
   const [hover, setHover] = useState(null);
   const [selected, setSelected] = useState(null);
@@ -34,7 +37,7 @@ export default function App() {
     setQuery(text);
     setAsking(true);
     try {
-      setResult(await askAgent(text));
+      setResult(await askAgent(text, apiKey.trim() || undefined));
     } catch {
       setResult({ agent: "Error", text: "Could not reach the agent service." });
     } finally {
@@ -120,6 +123,9 @@ export default function App() {
           loading={asking}
           onAsk={onAsk}
           onClear={() => setResult(null)}
+          apiKey={apiKey}
+          setApiKey={setApiKey}
+          serverHasKey={data.serverHasKey}
         />
         <Summary narrative={narrative} kpis={kpis} />
         <FastMover fastMover={data.fastMover} onOpen={setSelected} />

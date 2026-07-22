@@ -178,6 +178,25 @@ def test_ask_deterministic_without_key(monkeypatch) -> None:
     assert "Chase these first" in out["text"]
 
 
+def test_ask_bad_byo_key_falls_back(monkeypatch) -> None:
+    # A bring-your-own key that fails must fall back to the deterministic answer
+    # and say so -- never error the request. (LLM call stubbed; no network.)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("invalid api key")
+
+    monkeypatch.setattr(agents_web, "llm_answer", boom)
+    out = agents_web.ask("how much is at risk?", forecast.flagged_deals(), api_key="sk-ant-x")
+    assert out["source"] == "deterministic" and out["text"]
+    assert "note" in out  # explains the key didn't work
+
+
+def test_forecast_reports_server_key_flag() -> None:
+    p = client.get("/api/forecast").json()
+    assert "serverHasKey" in p and isinstance(p["serverHasKey"], bool)
+
+
 def test_endpoints() -> None:
     assert client.get("/api/health").json() == {"status": "ok"}
     fc = client.get("/api/forecast").json()

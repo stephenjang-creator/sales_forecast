@@ -8,8 +8,40 @@ const SUGGESTIONS = [
   "How much Commit is at risk this quarter?",
 ];
 
-export default function AgentBar({ query, setQuery, result, loading, onAsk, onClear }) {
+export default function AgentBar({
+  query,
+  setQuery,
+  result,
+  loading,
+  onAsk,
+  onClear,
+  apiKey = "",
+  setApiKey = () => {},
+  serverHasKey = false,
+}) {
   const [hoverChip, setHoverChip] = useState(-1);
+  const [keyOpen, setKeyOpen] = useState(false);
+  const [draft, setDraft] = useState("");
+
+  const usingKey = !!apiKey.trim();
+  const fullMode = usingKey || serverHasKey;
+  const sourceLabel =
+    result?.source === "llm" ? "answered by AI" : result ? "deterministic answer" : "";
+
+  const openKey = () => {
+    setDraft(apiKey);
+    setKeyOpen(true);
+  };
+  const saveKey = () => {
+    setApiKey(draft.trim());
+    setKeyOpen(false);
+  };
+  const clearKey = () => {
+    setApiKey("");
+    setDraft("");
+    setKeyOpen(false);
+  };
+
   return (
     <div
       style={{
@@ -122,7 +154,7 @@ export default function AgentBar({ query, setQuery, result, loading, onAsk, onCl
             >
               → {result.agent}
             </span>
-            <span style={{ fontSize: 11.5, color: C.faint }}>routed automatically</span>
+            <span style={{ fontSize: 11.5, color: C.faint }}>routed automatically · {sourceLabel}</span>
             <button
               onClick={onClear}
               style={{
@@ -141,10 +173,13 @@ export default function AgentBar({ query, setQuery, result, loading, onAsk, onCl
           <p style={{ margin: 0, fontSize: 14, lineHeight: 1.55, color: "oklch(0.3 0.012 260)" }}>
             {result.text}
           </p>
+          {result.note && (
+            <p style={{ margin: "8px 0 0", fontSize: 12, color: C.warning }}>{result.note}</p>
+          )}
         </div>
       )}
 
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, padding: "4px 10px 10px" }}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, padding: "4px 10px 8px" }}>
         {SUGGESTIONS.map((s, i) => (
           <button
             key={s}
@@ -167,6 +202,127 @@ export default function AgentBar({ query, setQuery, result, loading, onAsk, onCl
           </button>
         ))}
       </div>
+
+      {/* Mode footer: demo (deterministic) vs full AI (server key or bring-your-own). */}
+      <div
+        style={{
+          borderTop: `1px solid ${C.hairline}`,
+          padding: "9px 12px",
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          flexWrap: "wrap",
+        }}
+      >
+        <span
+          aria-hidden="true"
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: "50%",
+            background: fullMode ? C.positive : "oklch(0.75 0.01 260)",
+            flexShrink: 0,
+          }}
+        />
+        <span style={{ fontSize: 12, color: fullMode ? C.positive : C.muted, fontWeight: 500 }}>
+          {usingKey
+            ? "Full AI mode · your Anthropic key (not saved)"
+            : serverHasKey
+              ? "Full AI mode · LLM answers enabled"
+              : "Demo mode · deterministic answers"}
+        </span>
+
+        {!keyOpen && (
+          <div style={{ marginLeft: "auto", display: "flex", gap: 12 }}>
+            {usingKey ? (
+              <>
+                <FooterLink onClick={openKey}>Change key</FooterLink>
+                <FooterLink onClick={clearKey}>Clear</FooterLink>
+              </>
+            ) : (
+              <FooterLink onClick={openKey}>
+                {serverHasKey ? "Use your own key" : "Use your Anthropic key for full AI answers"}
+              </FooterLink>
+            )}
+          </div>
+        )}
+      </div>
+
+      {keyOpen && (
+        <div style={{ padding: "0 12px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <input
+              type="password"
+              value={draft}
+              autoComplete="off"
+              spellCheck={false}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && saveKey()}
+              placeholder="sk-ant-…  (your Anthropic API key)"
+              style={{
+                flex: 1,
+                minWidth: 240,
+                height: 34,
+                padding: "0 12px",
+                borderRadius: 8,
+                border: `1px solid ${C.border}`,
+                outline: "none",
+                fontSize: 13,
+                fontFamily: "inherit",
+                color: "oklch(0.24 0.012 260)",
+              }}
+            />
+            <button onClick={saveKey} style={btn(ACCENT, "#fff")}>
+              Enable
+            </button>
+            <button onClick={() => setKeyOpen(false)} style={btn("#fff", "oklch(0.4 0.012 260)", true)}>
+              Cancel
+            </button>
+          </div>
+          <p style={{ margin: 0, fontSize: 11.5, lineHeight: 1.5, color: C.faint }}>
+            🔒 Kept in your browser for this session only. It's sent over HTTPS with each
+            question, used once to answer, and <strong>never stored or logged</strong> on the
+            server. Refreshing the page clears it. Get a key at{" "}
+            <span style={{ fontFamily: "monospace" }}>console.anthropic.com</span>.
+          </p>
+        </div>
+      )}
     </div>
   );
+}
+
+function FooterLink({ onClick, children }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        border: "none",
+        background: "transparent",
+        color: ACCENT,
+        cursor: "pointer",
+        fontSize: 12,
+        fontWeight: 600,
+        fontFamily: "inherit",
+        padding: 0,
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function btn(bg, fg, bordered) {
+  return {
+    height: 34,
+    padding: "0 14px",
+    borderRadius: 8,
+    border: bordered ? `1px solid ${C.border}` : "none",
+    background: bg,
+    color: fg,
+    fontSize: 13,
+    fontWeight: 600,
+    cursor: "pointer",
+    fontFamily: "inherit",
+    flexShrink: 0,
+  };
 }

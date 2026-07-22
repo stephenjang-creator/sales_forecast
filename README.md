@@ -184,7 +184,10 @@ container**. What it does:
   + recommended step). **Booked Closed-Won** deals show in green (no action) and
   can be toggled off.
 - **Ask anything** — the agent bar routes a question to one of four agents and
-  answers from the real data.
+  answers from the real data. It runs in **demo mode** (deterministic answers, no
+  key needed); for the **full AI experience** a visitor can paste their own
+  Anthropic key into the bar — used only for their questions and **never stored,
+  logged, or persisted**.
 
 The API is read-only:
 
