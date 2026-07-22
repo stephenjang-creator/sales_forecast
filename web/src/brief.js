@@ -44,6 +44,35 @@ function kpiCard(label, value, sub, color) {
     </div>`;
 }
 
+const BAR = "#52a878"; // booked bar green (matches the dashboard)
+const BAR_CUR = "#dff1e6"; // in-progress period (lighter)
+
+function trendChart(bk) {
+  const series = (bk.series?.quarter || []).slice(-8);
+  if (!series.length) return "";
+  const max = Math.max(1, ...series.map((s) => s.booked));
+  const current = series[series.length - 1].period;
+  const bars = series
+    .map((s) => {
+      const h = Math.max(3, Math.round((s.booked / max) * 88));
+      const cur = s.period === current;
+      return `
+        <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px">
+          <div style="font-size:8px;color:${MUT};font-family:'IBM Plex Mono',ui-monospace,monospace">${money(s.booked)}</div>
+          <div style="width:66%;max-width:34px;height:${h}px;border-radius:3px 3px 0 0;background:${cur ? BAR_CUR : BAR};${cur ? `border:1px dashed ${GREEN}` : ""}"></div>
+          <div style="font-size:8px;color:${MUT};font-family:'IBM Plex Mono',ui-monospace,monospace">${esc(s.period)}</div>
+        </div>`;
+    })
+    .join("");
+  return `
+    <div style="margin-bottom:16px">
+      <h2>Bookings trend — booked by quarter</h2>
+      <div style="display:flex;align-items:flex-end;gap:6px;border:1px solid ${LINE};border-radius:9px;padding:12px 14px 9px">
+        ${bars}
+      </div>
+    </div>`;
+}
+
 function momentumCell(label, value, pct) {
   return `
     <div style="flex:1;text-align:left">
@@ -152,6 +181,9 @@ function buildHtml(data, timeframe) {
       ${momentumCell("MoM · " + (bk.mom?.period ?? ""), money(bk.mom?.booked), bk.mom?.pct)}
     </div>
   </div>
+
+  <!-- Bookings trend chart -->
+  ${trendChart(bk)}
 
   <!-- Where the risk is -->
   <div style="margin-bottom:14px">
