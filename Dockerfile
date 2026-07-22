@@ -11,9 +11,10 @@ RUN npm run build
 FROM python:3.11-slim
 WORKDIR /app
 
-# Install Python deps first for better layer caching.
-COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+# Install runtime-only deps first for better layer caching. requirements-api.txt
+# is a trimmed list (no Streamlit/MCP/dev tooling) to keep the image small.
+COPY requirements-api.txt ./
+RUN pip install --no-cache-dir -r requirements-api.txt
 
 # App code + data + the built frontend from stage 1.
 COPY api/ ./api/

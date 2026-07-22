@@ -6,11 +6,14 @@ export async function fetchForecast() {
   return res.json();
 }
 
-export async function askAgent(query) {
+// `apiKey` is an optional bring-your-own Anthropic key. It's sent only with this
+// request (over HTTPS), used once server-side, and never persisted anywhere.
+export async function askAgent(query, apiKey) {
+  const body = apiKey ? { query, apiKey } : { query };
   const res = await fetch("/api/ask", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ query }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`ask ${res.status}`);
   return res.json();

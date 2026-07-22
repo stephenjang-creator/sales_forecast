@@ -1,9 +1,11 @@
 """Agent bar: route a natural-language question to one of four agents and answer.
 
-Answers are computed from the real flagged deals (deterministic, always works).
-When ANTHROPIC_API_KEY is set, the deterministic answer + a compact forecast
-context are handed to the model for a sharper, grounded reply -- one API call,
-no subprocess, and it falls back to the deterministic text on any error. The
+Answers are computed from the real flagged deals (deterministic, always works)
+-- this is the "demo only" mode that needs no API key. When a key is available,
+the deterministic answer + a compact forecast context are handed to the model for
+a sharper, grounded reply (one API call, no subprocess), falling back to the
+deterministic text on any error. The key can be the server's ANTHROPIC_API_KEY or
+a bring-your-own key passed per request (used once, never stored or logged). The
 rules still own every flag; the agent only explains and recommends.
 """
 
@@ -112,42 +114,56 @@ def _context(deals: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def llm_answer(agent: str, query: str, deals: list[dict], deterministic: str) -> str:
-    """One grounded Anthropic call; falls back to the deterministic answer on error."""
-    try:
-        from anthropic import Anthropic
+def llm_answer(
+    agent: str, query: str, deals: list[dict], deterministic: str, api_key: str | None = None
+) -> str:
+    """One grounded Anthropic call. Raises on error so the caller can fall back and
+    report the source honestly. ``api_key``, when given, is a caller-supplied key
+    used only for this call -- it is never stored, logged, or written anywhere."""
+    from anthropic import Anthropic
 
-        client = Anthropic()
-        model = os.environ.get("FORECAST_AGENT_MODEL", "claude-sonnet-4-6")
-        msg = client.messages.create(
-            model=model,
-            max_tokens=350,
-            system=_SYSTEM.format(agent=agent),
-            messages=[
-                {
-                    "role": "user",
-                    "content": (
-                        f"Forecast context:\n{_context(deals)}\n\n"
-                        f"A deterministic draft answer: {deterministic}\n\n"
-                        f"Question: {query}\n\n"
-                        "Answer as the agent, grounded only in the context above."
-                    ),
-                }
-            ],
-        )
-        text = "".join(b.text for b in msg.content if getattr(b, "type", None) == "text").strip()
-        return text or deterministic
-    except Exception:  # noqa: BLE001 - never fail the request; fall back
-        return deterministic
+    client = Anthropic(api_key=api_key) if api_key else Anthropic()
+    model = os.environ.get("FORECAST_AGENT_MODEL", "claude-sonnet-4-6")
+    msg = client.messages.create(
+        model=model,
+        max_tokens=350,
+        system=_SYSTEM.format(agent=agent),
+        messages=[
+            {
+                "role": "user",
+                "content": (
+                    f"Forecast context:\n{_context(deals)}\n\n"
+                    f"A deterministic draft answer: {deterministic}\n\n"
+                    f"Question: {query}\n\n"
+                    "Answer as the agent, grounded only in the context above."
+                ),
+            }
+        ],
+    )
+    text = "".join(b.text for b in msg.content if getattr(b, "type", None) == "text").strip()
+    return text or deterministic
 
 
-def ask(query: str, deals: list[dict]) -> dict:
-    """Route + answer. Uses the LLM when ANTHROPIC_API_KEY is set, else deterministic."""
+def ask(query: str, deals: list[dict], api_key: str | None = None) -> dict:
+    """Route + answer. Uses the LLM when a key is available -- either a
+    caller-supplied ``api_key`` (bring-your-own, used once and never saved) or the
+    server's ``ANTHROPIC_API_KEY`` -- else the deterministic answer. Reports which
+    source produced the text; if a provided key fails, it falls back and says so.
+    """
     agent = route_agent(query)
     deterministic = deterministic_answer(agent, deals)
-    if os.environ.get("ANTHROPIC_API_KEY"):
-        text = llm_answer(agent, query, deals, deterministic)
-        source = "llm"
-    else:
-        text, source = deterministic, "deterministic"
-    return {"agent": agent, "text": text, "source": source}
+    byo = bool(api_key)
+    key = api_key or os.environ.get("ANTHROPIC_API_KEY")
+    if not key:
+        return {"agent": agent, "text": deterministic, "source": "deterministic"}
+    try:
+        text = llm_answer(agent, query, deals, deterministic, api_key=api_key)
+        return {"agent": agent, "text": text, "source": "llm"}
+    except Exception:  # noqa: BLE001 - never fail the request; fall back to deterministic
+        note = (
+            "That API key didn't work — showing the deterministic answer instead." if byo else None
+        )
+        out = {"agent": agent, "text": deterministic, "source": "deterministic"}
+        if note:
+            out["note"] = note
+        return out

@@ -30,9 +30,17 @@ import config
 import periods
 from detector.engine import load, run
 from detector.evaluate import overall_metrics, per_rule_metrics, scorecard_markdown
-from detector.plays import FAST_MOVER_PLAY, VALUE_TOUCH_PLAY, Play, primary_hit, primary_play
+from detector.plays import (
+    FAST_MOVER_PLAY,
+    NO_MEETING_PLAY,
+    Play,
+    meeting_play,
+    primary_hit,
+    primary_play,
+)
 from detector.plays import recommend_plays as _recommend_plays
 from detector.rules import RuleHit
+from detector.signals import _has_next_meeting
 
 mcp = FastMCP("forecast-detector")
 
@@ -368,7 +376,7 @@ def assess_segment(segment: str, region_aware: bool = False) -> dict:
 
 @mcp.tool()
 def assess_region(region: str, region_aware: bool = False) -> dict:
-    """Risk-exposure roll-up for a region (NA / EMEA / APAC / LATAM).
+    """Risk-exposure roll-up for a region (NAM / EMEA / APAC / LATAM).
 
     Same shape as assess_segment: deals, flagged, ARR totals, at_risk_pct_of_commit,
     top_reasons, avg_meddpicc_confidence. Set region_aware=True to score with the
@@ -559,9 +567,13 @@ def recommend_plays(deal_id: str, region_aware: bool = False) -> dict:
         hits = _hits_of(row)
         play_dicts = [_play_dict(p) for p in _recommend_plays(hits)]
         # A far-out / missing next meeting is a signal, not an anomaly, but it's
-        # still actionable -- append its value-touch play.
+        # still actionable. With no meeting booked, booking one (and landing the
+        # top play in it) is the prioritized FIRST move -- prepend it; a meeting
+        # that's merely too far out just needs a pull-sooner touch appended.
         if _has_signal(row, "meeting_at_risk"):
-            play_dicts.append(_play_dict(VALUE_TOUCH_PLAY))
+            has_mtg = _has_next_meeting(row)
+            mp = _play_dict(meeting_play(has_mtg))
+            play_dicts.append(mp) if has_mtg else play_dicts.insert(0, mp)
         return {
             "deal_id": str(row["deal_id"]),
             "account": str(row["account"]),
@@ -681,18 +693,31 @@ def _action_deal(row: pd.Series, reason: str) -> dict:
 def _candidate_action(row: pd.Series):
     """The (play, kind, severity, per-deal reason) a single active deal calls for.
 
-    A flagged deal calls for the play addressing its top risk; a clean fast
-    mover calls for the close play. Everything else needs nothing -> None.
+    A flagged deal calls for the play addressing its top risk -- BUT if it has no
+    next meeting booked, nothing can advance, so the prioritized move becomes
+    booking one with a value touch (and landing that top play in it). A clean fast
+    mover calls for the close play; a clean deal whose meeting is only too far out
+    gets a pull-sooner touch. Everything else needs nothing -> None.
     """
+    has_mtg = _has_next_meeting(row)
     if bool(row["predicted_anomaly"]):
         hit = primary_hit(_hits_of(row))
         if hit is None:
+            # Flagged but no playable hit; still book a meeting if none is set.
+            if _has_signal(row, "meeting_at_risk") and not has_mtg:
+                return NO_MEETING_PLAY, "risk", "medium", _signal_reason(row, "meeting_at_risk")
             return None
+        if not has_mtg:
+            reason = (
+                f"No next meeting booked -- book it with a value touch, then land "
+                f"the top play. Top risk: {hit.reason}"
+            )
+            return NO_MEETING_PLAY, "risk", hit.severity, reason
         return primary_play(_hits_of(row)), "risk", hit.severity, hit.reason
     if "fast_mover" in row and bool(row["fast_mover"]):
         return FAST_MOVER_PLAY, "opportunity", "opportunity", _fast_reason(row)
     if _has_signal(row, "meeting_at_risk"):
-        return VALUE_TOUCH_PLAY, "risk", "medium", _signal_reason(row, "meeting_at_risk")
+        return meeting_play(has_mtg), "risk", "medium", _signal_reason(row, "meeting_at_risk")
     return None
 
 

@@ -13,7 +13,10 @@ from datetime import date
 from functools import lru_cache
 from pathlib import Path
 
+import pandas as pd
+
 import config
+import periods
 from detector.engine import load, run
 from detector.evaluate import overall_metrics, per_rule_metrics
 from detector.plays import PLAYBOOK, VALUE_TOUCH_PLAY
@@ -22,7 +25,7 @@ from detector.rules import RuleHit
 _DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 _DEFAULT_CSV = _DATA_DIR / "pipeline.csv"
 
-REGION_ORDER = ["NA", "EMEA", "APAC", "LATAM"]
+REGION_ORDER = ["NAM", "EMEA", "APAC", "LATAM"]
 
 # Pretty labels for the rule ids (the raw id is mono-styled in the drawer).
 RULE_LABELS = {
@@ -85,12 +88,16 @@ def _rule_dicts(hits: list[RuleHit]) -> list[dict]:
     ]
 
 
-def _close_str(value) -> str | None:
+def _close_date(value) -> date | None:
     try:
-        d = date.fromisoformat(str(value)[:10])
+        return date.fromisoformat(str(value)[:10])
     except (ValueError, TypeError):
         return None
-    return f"{d:%b} {d.day}, {d.year}"  # portable (no platform-specific %-d)
+
+
+def _close_str(value) -> str | None:
+    d = _close_date(value)
+    return f"{d:%b} {d.day}, {d.year}" if d else None  # portable (no %-d)
 
 
 def _deal_dict(row) -> dict:
@@ -99,14 +106,18 @@ def _deal_dict(row) -> dict:
     arr = float(row["arr"])
     mrr = float(row["mrr"]) if "mrr" in row and row["mrr"] == row["mrr"] else round(arr / 12)
     nm = row.get("next_meeting_date")
+    stage = str(row["stage"])
+    fc = str(row["forecast_category"])
     return {
         "id": str(row["deal_id"]),
         "account": str(row["account"]),
         "region": str(row["region"]),
         "segment": str(row["segment"]),
         "industry": str(row.get("industry", "")),
-        "stage": str(row["stage"]),
-        "fc": str(row["forecast_category"]),
+        "stage": stage,
+        "stageRank": config.STAGE_ORDER.get(stage, 99),
+        "fc": fc,
+        "fcRank": config.FORECAST_ORDER.get(fc, 99),
         "risk": risk,
         "tier": tier_of(risk),
         "amount": arr,
@@ -117,8 +128,10 @@ def _deal_dict(row) -> dict:
         "owner": str(row.get("rep", "")),
         "manager": str(row.get("sales_manager", "")),
         "closeDate": _close_str(row.get("close_date")),
+        "closeISO": (cd.isoformat() if (cd := _close_date(row.get("close_date"))) else None),
         "nextMeeting": (None if nm is None or nm != nm else str(nm)),
         "rules": _rule_dicts(hits),
+        "closed": fc == "Closed",  # Closed Won: booked, no risk, no action
     }
 
 
@@ -127,6 +140,116 @@ def flagged_deals() -> list[dict]:
     df = _scored()
     flagged = df[df["predicted_anomaly"]].sort_values("risk_score", ascending=False)
     return [_deal_dict(row) for _, row in flagged.iterrows()]
+
+
+def booked_deals() -> list[dict]:
+    """Closed Won deals -- booked revenue for the period, richest first.
+
+    These are done: no anomaly can fire on a closed deal, so they carry no risk
+    and need no action. They still count toward the period forecast, which is why
+    the dashboard shows them (highlighted) rather than hiding them.
+    """
+    df = _scored()
+    won = df[df["stage"] == "Closed Won"].sort_values("arr", ascending=False)
+    return [_deal_dict(row) for _, row in won.iterrows()]
+
+
+def _booked_totals() -> tuple[float, int]:
+    """(booked ARR, deal count) for Closed Won -- the locked part of the forecast."""
+    df = _scored()
+    won = df[df["stage"] == "Closed Won"]
+    return float(won["arr"].sum()), int(len(won))
+
+
+def _shift_month(year: int, month: int, delta: int) -> tuple[int, int]:
+    """(year, month) shifted by ``delta`` months (handles year rollover)."""
+    idx = year * 12 + (month - 1) + delta
+    return idx // 12, idx % 12 + 1
+
+
+def _won_frame():
+    df = _scored()
+    won = df[df["stage"] == "Closed Won"].copy()
+    won["_cd"] = pd.to_datetime(won["close_date"])
+    return won
+
+
+def bookings_summary() -> dict:
+    """Booked (Closed Won) revenue over time, for YoY / QoQ / MoM / YTD.
+
+    Returns the booked series at month/quarter/year grain plus period-over-period
+    deltas: MoM and QoQ compare the latest *complete* period to the one before
+    (the current period is still in progress), YoY compares the last two complete
+    years, and YTD compares this calendar year through today against the same
+    window last year. All computed from the closed-won deals in the pipeline.
+    """
+    won = _won_frame()
+    today = date.today()
+
+    def keys(d: date) -> tuple[str, str, str]:
+        return (f"{d.year}-{d.month:02d}", f"{d.year}-Q{(d.month - 1) // 3 + 1}", f"{d.year}")
+
+    month: dict[str, list] = {}
+    quarter: dict[str, list] = {}
+    year: dict[str, list] = {}
+    for _, r in won.iterrows():
+        arr = float(r["arr"])
+        mk, qk, yk = keys(r["_cd"].date())
+        for store, k in ((month, mk), (quarter, qk), (year, yk)):
+            b = store.setdefault(k, [0.0, 0])
+            b[0] += arr
+            b[1] += 1
+
+    def series(store: dict) -> list[dict]:
+        return [
+            {"period": k, "booked": round(store[k][0]), "deals": store[k][1]} for k in sorted(store)
+        ]
+
+    def delta(store: dict, cur_key: str, prior_key: str, cur_label=None) -> dict:
+        cur = store.get(cur_key, [0.0, 0])
+        prior = store.get(prior_key, [0.0, 0])
+        return {
+            "period": cur_label or cur_key,
+            "booked": round(cur[0]),
+            "priorPeriod": prior_key,
+            "priorBooked": round(prior[0]),
+            "pct": periods._pct_change(cur[0], prior[0]),
+            "deals": cur[1],
+        }
+
+    # MoM/QoQ: latest COMPLETE period (current is partial) vs the one before.
+    lc_y, lc_m = _shift_month(today.year, today.month, -1)
+    p_y, p_m = _shift_month(today.year, today.month, -2)
+    mom = delta(month, f"{lc_y}-{lc_m:02d}", f"{p_y}-{p_m:02d}")
+    cur_q = (today.month - 1) // 3 + 1
+    lcq_y, lcq = (today.year, cur_q - 1) if cur_q > 1 else (today.year - 1, 4)
+    pq_y, pq = (lcq_y, lcq - 1) if lcq > 1 else (lcq_y - 1, 4)
+    qoq = delta(quarter, f"{lcq_y}-Q{lcq}", f"{pq_y}-Q{pq}")
+    yoy = delta(year, str(today.year - 1), str(today.year - 2))
+
+    # YTD: this calendar year through today vs the same window last year.
+    def ytd_between(y: int) -> float:
+        cd = won["_cd"]
+        m = (cd >= pd.Timestamp(y, 1, 1)) & (cd <= pd.Timestamp(y, today.month, today.day))
+        return float(won.loc[m, "arr"].sum())
+
+    ytd_cur, ytd_prior = ytd_between(today.year), ytd_between(today.year - 1)
+    ytd = {
+        "period": f"{today.year} YTD",
+        "booked": round(ytd_cur),
+        "priorPeriod": f"{today.year - 1} YTD",
+        "priorBooked": round(ytd_prior),
+        "pct": periods._pct_change(ytd_cur, ytd_prior),
+    }
+
+    return {
+        "series": {"month": series(month), "quarter": series(quarter), "year": series(year)},
+        "ytd": ytd,
+        "mom": mom,
+        "qoq": qoq,
+        "yoy": yoy,
+        "asOf": today.isoformat(),
+    }
 
 
 def kpis_and_summary(deals: list[dict]) -> dict:
@@ -143,13 +266,10 @@ def kpis_and_summary(deals: list[dict]) -> dict:
         by_region[d["region"]] = by_region.get(d["region"], 0.0) + d["arr"]
     top_region = max(by_region.items(), key=lambda kv: kv[1]) if by_region else ("--", 0.0)
 
+    # The Booked KPI + booked narrative clause are timeframe-scoped, so the client
+    # composes them from bookedDeals + the header timeframe control. The server
+    # owns the open-pipeline tiles and the open-pipeline half of the narrative.
     kpis = [
-        {
-            "label": "Forecasted, flagged",
-            "value": money(flagged_arr),
-            "sub": f"{total_flagged} of {total_deals} deals",
-            "tone": "muted",
-        },
         {
             "label": "At risk (High + Critical)",
             "value": money(at_risk_arr),
@@ -170,8 +290,9 @@ def kpis_and_summary(deals: list[dict]) -> dict:
         },
     ]
     narrative = (
-        f"{money(at_risk_arr)} of Commit + Best Case is flagged across {len(at_risk)} "
-        f"at-risk deals — {top_region[0]} carries the most exposure at "
+        f"{money(flagged_arr)} of open pipeline is flagged across {total_flagged} of "
+        f"{total_deals} deals; {money(at_risk_arr)} of Commit + Best Case is at risk across "
+        f"{len(at_risk)} — {top_region[0]} carries the most exposure at "
         f"{money(top_region[1])}, driven by low-confidence Commits and slipped close dates."
     )
     return {"kpis": kpis, "narrative": narrative}
@@ -230,8 +351,20 @@ def fast_mover() -> dict | None:
 def full_payload() -> dict:
     """Everything the dashboard needs in one call."""
     deals = flagged_deals()
+    scored = _scored()
+    has_region = "region" in scored.columns
+    by_region = (
+        {r: periods.pipeline_by_period(scored, "month", r) for r in REGION_ORDER}
+        if has_region
+        else {}
+    )
     return {
         "deals": deals,
+        "totalDeals": int(len(scored)),
+        "bookedDeals": booked_deals(),
+        "bookings": bookings_summary(),
+        "pipelineByMonth": periods.pipeline_by_period(scored, "month"),
+        "pipelineByMonthByRegion": by_region,
         **kpis_and_summary(deals),
         "fastMover": fast_mover(),
         "scorecard": scorecard(),

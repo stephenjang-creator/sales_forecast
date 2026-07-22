@@ -19,6 +19,23 @@ export const C = {
   warning: "oklch(0.58 0.17 40)",
   critical: "oklch(0.55 0.17 25)",
   greenRail: "oklch(0.68 0.13 155)",
+  // Closed Won (booked) treatment -- exact v2 design tokens (green, hue ~150/152).
+  closedBg: "oklch(0.955 0.045 150)", // won row background
+  closedBorder: "oklch(0.9 0.04 150)", // won row bottom border
+  closedBand: "oklch(0.7 0.13 152)", // won row band bar
+  closedChipBg: "oklch(0.9 0.08 150)", // ✓ chip bg
+  closedChipFg: "oklch(0.4 0.14 152)", // ✓ chip fg
+  closedBadgeBg: "oklch(0.88 0.09 152)", // "Closed" forecast badge bg
+  closedBadgeFg: "oklch(0.36 0.13 152)", // "Closed" forecast badge / toggle fg
+  toggleShownBg: "oklch(0.92 0.07 150)", // "✓ Shown" toggle bg
+  toggleShownBorder: "oklch(0.78 0.1 152)",
+  noteBg: "oklch(0.94 0.06 150)", // drawer "booked" note bg
+  noteBorder: "oklch(0.86 0.08 152)",
+  omittedBg: "oklch(0.96 0.004 260)", // faint "Omitted" badge
+  omittedFg: "oklch(0.6 0.01 260)",
+  booked: "oklch(0.48 0.13 152)", // KPI value color
+  positive: "oklch(0.46 0.13 152)", // region booked total / deltas
+  closedText: "oklch(0.4 0.13 152)",
 };
 
 export const MONO = "'IBM Plex Mono', monospace";
@@ -48,4 +65,6 @@ export const KPI_TONE = {
   muted: C.muted,
   warning: C.warning,
   critical: C.critical,
+  positive: C.positive,
+  booked: C.booked,
 };

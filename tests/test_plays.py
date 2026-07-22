@@ -5,9 +5,11 @@ from __future__ import annotations
 from detector.evaluate import ANOMALY_TYPES
 from detector.plays import (
     FAST_MOVER_PLAY,
+    NO_MEETING_PLAY,
     PLAYBOOK,
     STALLED_SLIPPED_RULES,
     VALUE_TOUCH_PLAY,
+    meeting_play,
     primary_play,
     recommend_plays,
 )
@@ -72,3 +74,18 @@ def test_value_touch_play_shape() -> None:
 def test_stalled_slipped_rules_are_known_plays() -> None:
     for rid in STALLED_SLIPPED_RULES:
         assert rid in PLAYBOOK
+
+
+def test_meeting_play_switches_on_whether_a_meeting_is_booked() -> None:
+    # Meeting booked but too far out -> pull it sooner (value touch).
+    assert meeting_play(True) is VALUE_TOUCH_PLAY
+    # No meeting booked -> book one AND land the play in it (the prioritized move).
+    assert meeting_play(False) is NO_MEETING_PLAY
+    assert NO_MEETING_PLAY.rule_id == "meeting_at_risk" and "meeting_at_risk" not in PLAYBOOK
+
+
+def test_no_meeting_play_books_and_lands_the_play() -> None:
+    joined = " ".join(NO_MEETING_PLAY.actions).lower()
+    assert "value touch" in joined  # get the meeting via a value touch
+    assert "agenda" in joined or "top play" in joined  # ...and land the play in it
+    assert "paper process" in joined  # the concrete example the ask called out

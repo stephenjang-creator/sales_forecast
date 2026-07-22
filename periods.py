@@ -142,11 +142,9 @@ def pipeline_by_period(scored: pd.DataFrame, grain: str, region: str | None = No
 # History loading + aggregation
 # --------------------------------------------------------------------------- #
 def _read_region_csv(path: str | Path) -> pd.DataFrame:
-    """Read a CSV, restoring the 'NA' region that pandas reads as NaN."""
-    df = pd.read_csv(path)
-    if "region" in df.columns:
-        df["region"] = df["region"].fillna("NA")
-    return df
+    """Read a region-keyed CSV. Region codes avoid pandas' NaN sentinels (North
+    America is 'NAM', not 'NA'), so no post-read repair is needed."""
+    return pd.read_csv(path)
 
 
 def load_history(path: str | Path) -> pd.DataFrame:

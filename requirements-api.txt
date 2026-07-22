@@ -1,0 +1,8 @@
+# Runtime-only deps for the deployable container (api.server).
+# The Dockerfile installs THIS file, not requirements.txt, so the image stays
+# small: no Streamlit, MCP, or dev tooling. Keep in sync with the API's imports.
+
+pandas>=2.0                 # deterministic core + evaluation
+fastapi>=0.110             # HTTP API (pulls in pydantic + starlette)
+uvicorn[standard]>=0.29    # ASGI server
+anthropic>=0.40            # optional LLM agent answers (no key -> deterministic)

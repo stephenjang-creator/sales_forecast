@@ -8,14 +8,14 @@ server:
   (``recommend_plays``), then personalizes those plays to the deal's specifics
   -- a talk track for the next call, sharpened next steps, the right owner.
 
-- Region mode (``--region NA`` / ``--all``): prioritizes what a regional VP
+- Region mode (``--region NAM`` / ``--all``): prioritizes what a regional VP
   should do TODAY. It reads ``region_top_actions`` -- the region's active
   pipeline grouped by the play each deal needs, so ONE action can cover several
   deals (e.g. "run a MEDDPICC call on these 5 deals"), ranked by ARR-at-stake --
   and returns the top N (default 3) as a prioritized worklist.
 
 - Chat mode (``--chat``): an interactive REPL with all the detector tools. Ask
-  "what are my top 3 things in NA?", then keep prompting ("tell me about #2",
+  "what are my top 3 things in NAM?", then keep prompting ("tell me about #2",
   "who owns the first one?", "show me those deals") -- the conversation persists.
 
 What it is NOT: it never changes a flag or invents a deal or number the tools
@@ -25,11 +25,11 @@ the deterministic plays / worklist with no key or network at all.
 
 Usage:
     python -m agents.sales_guru --deal D-10023          # coach one deal
-    python -m agents.sales_guru --region NA             # a region's top 3 actions
+    python -m agents.sales_guru --region NAM             # a region's top 3 actions
     python -m agents.sales_guru --all                   # every region
     python -m agents.sales_guru --all --dry-run         # deterministic, no key
     python -m agents.sales_guru --chat                  # interactive; ask + follow up
-    python -m agents.sales_guru --chat --region NA      # chat, seeded on a region
+    python -m agents.sales_guru --chat --region NAM      # chat, seeded on a region
 
 Needs ANTHROPIC_API_KEY for the agent + chat paths; --dry-run runs fully offline.
 """
@@ -536,7 +536,7 @@ async def chat(model: str, csv_path: str | None, region_aware: bool, opener: str
         tools = await anthropic_tool_schema(session)
         messages: list[dict] = []
         print("=" * 72)
-        print("  SALES GURU — interactive. Ask e.g. 'what are my top 3 things in NA?'")
+        print("  SALES GURU — interactive. Ask e.g. 'what are my top 3 things in NAM?'")
         print("  Type 'exit' or Ctrl-D to quit." + ("  (region-aware ON)" if region_aware else ""))
         print("=" * 72)
         pending = opener
@@ -663,7 +663,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--deal", help="coach a single deal (e.g. D-10023)")
-    group.add_argument("--region", help="prioritize a single region (e.g. NA)")
+    group.add_argument("--region", help="prioritize a single region (e.g. NAM)")
     group.add_argument("--all", action="store_true", help="prioritize every region")
     group.add_argument(
         "--chat",

@@ -108,12 +108,12 @@ seed 28); yours will differ if you point `FORECAST_CSV` at your own export.
   across the coming months.
 
 ### 11. Year-over-year / quarter-over-quarter (completed periods)
-> **"How did we do YoY last quarter?"** / **"Is NA growing QoQ?"**
+> **"How did we do YoY last quarter?"** / **"Is NAM growing QoQ?"**
 
-- **Call:** `period_comparison(grain="quarter", region="NA")`
+- **Call:** `period_comparison(grain="quarter", region="NAM")`
 - **Returns:** latest *completed* period's bookings + attainment, the prior
   quarter (QoQ), and the same quarter a year ago (YoY), with percent changes.
-- **Narration tip:** Use this for settled trends (e.g. "NA finished Q2 +24% YoY,
+- **Narration tip:** Use this for settled trends (e.g. "NAM finished Q2 +24% YoY,
   +22% QoQ at 105% attainment") — not the in-progress period, which understates.
 
 ### 12. Historical trend
@@ -144,7 +144,7 @@ seed 28); yours will differ if you point `FORECAST_CSV` at your own export.
 ### 15. Deal signals (fast movers & complex deals)
 > **"Which deals will move fast, and which will drag?"**
 
-- **Calls:** `signals_summary(region="NA")` for counts + ARR, then
+- **Calls:** `signals_summary(region="NAM")` for counts + ARR, then
   `list_deals(signal="fast_mover")` or `list_deals(signal="complex_deal")` to pull
   them; `assess_deal(...)` returns a deal's `decision_profile` and `signals`.
 - **What they mean:** `fast_mover` = Director+ champion and a simple process (few
@@ -176,10 +176,10 @@ seed 28); yours will differ if you point `FORECAST_CSV` at your own export.
   `python -m agents.sales_guru --deal D-10023` (or `--dry-run` for the plays alone).
 
 ### 17. Regional VP priorities — "what are my top 3 things?"
-> **"I run NA — what are the top 3 things my team should do today?"**
+> **"I run NAM — what are the top 3 things my team should do today?"**
 
-- **Call:** `region_top_actions("NA", max_deals=10)` (deterministic), or the
-  `sales_guru` agent (`--region NA` / `--all`) to narrate it.
+- **Call:** `region_top_actions("NAM", max_deals=10)` (deterministic), or the
+  `sales_guru` agent (`--region NAM` / `--all`) to narrate it.
 - **Returns:** the top `max_deals` (default 10) deals region-wide, grouped by the
   play to run — a ranked list of `actions` (each **one play that can cover several
   deals**, with `kind`, `deal_count`, `arr_at_stake`, `mrr_at_stake`, the covered
@@ -204,14 +204,14 @@ seed 28); yours will differ if you point `FORECAST_CSV` at your own export.
   ids. Lead with action #1 as an imperative; tell the VP which managers to notify
   vs. which few calls to join themselves. It's a worklist, **not** an attainment
   forecast — pair with `bookings_rollup` for the number.
-- **Run the agent:** `python -m agents.sales_guru --region NA` (or `--all`), or
+- **Run the agent:** `python -m agents.sales_guru --region NAM` (or `--all`), or
   add `--dry-run` for the deterministic worklist with no key.
 
 ### 18. Ask the guru, then keep prompting (interactive)
-> **"What are my top 3 things in NA?"** → **"Tell me more about #2."** → **"Who
+> **"What are my top 3 things in NAM?"** → **"Tell me more about #2."** → **"Who
 > owns the first one, and show me those deals."**
 
-- **Run:** `python -m agents.sales_guru --chat` (or `--chat --region NA` to seed
+- **Run:** `python -m agents.sales_guru --chat` (or `--chat --region NAM` to seed
   the first question). Needs `ANTHROPIC_API_KEY`.
 - **How it works:** a conversational agent with every MCP tool available. It
   answers the first question via `region_top_actions`, and because the

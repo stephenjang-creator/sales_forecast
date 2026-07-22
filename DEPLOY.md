@@ -8,7 +8,7 @@ that runs Docker and set one optional environment variable.
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| `ANTHROPIC_API_KEY` | optional | Enables LLM-backed answers in the "Ask anything" agent bar. **Without it the app still works fully** — agents fall back to deterministic answers computed from the real data. |
+| `ANTHROPIC_API_KEY` | optional | Enables LLM-backed answers in the "Ask anything" agent bar for **everyone** who visits. **Without it the app still works fully** — it runs in *demo mode* (deterministic answers from the real data), and a visitor can paste their **own** Anthropic key into the agent bar for a full-AI experience. That bring-your-own key is used only to answer that visitor's questions and is **never stored, logged, or persisted** server-side. |
 | `PORT` | optional | Port to bind (default `8000`). Most hosts inject this automatically. |
 | `FORECAST_CSV` | optional | Path to a different pipeline CSV (default: the bundled `data/pipeline.csv`). |
 | `FORECAST_AGENT_MODEL` | optional | Anthropic model id for agent answers (default `claude-sonnet-4-6`). |
@@ -29,9 +29,11 @@ Omit `-e ANTHROPIC_API_KEY` to run fully offline (deterministic agent answers).
 
 Any Docker host works. Common one-click options:
 
-- **Render** — New → Web Service → "Deploy an existing image" or connect the
-  repo (it auto-detects the `Dockerfile`). Set `ANTHROPIC_API_KEY` under
-  Environment. Render injects `PORT`.
+- **Render (one click)** — New → **Blueprint** → pick this repo. Render reads
+  the bundled [`render.yaml`](render.yaml): builds the `Dockerfile`, wires the
+  `/api/health` check, and prompts for `ANTHROPIC_API_KEY` (optional). It injects
+  `PORT`. Or do it manually: New → Web Service → connect the repo (it auto-detects
+  the `Dockerfile`) and set `ANTHROPIC_API_KEY` under Environment.
 - **Railway** — New Project → Deploy from repo. It builds the `Dockerfile` and
   injects `PORT`. Add `ANTHROPIC_API_KEY` under Variables.
 - **Fly.io** — `fly launch` (detects the Dockerfile), then

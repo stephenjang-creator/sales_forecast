@@ -86,14 +86,11 @@ def load(source: str | Path) -> pd.DataFrame:
     """Load a pipeline CSV into a DataFrame (no scoring applied).
 
     Accepts a path or any file-like object ``pandas.read_csv`` understands.
-    The ``region`` code ``"NA"`` (North America) collides with pandas' default
-    NaN sentinel and is otherwise silently dropped on read; since the column has
-    no genuinely-missing values, any NaN there is restored to ``"NA"``.
+    Region codes deliberately avoid pandas' default NaN sentinels -- North America
+    is ``"NAM"``, not ``"NA"`` -- so the region column reads back cleanly with no
+    post-read repair.
     """
-    df = pd.read_csv(source)
-    if "region" in df.columns:
-        df["region"] = df["region"].fillna("NA")
-    return df
+    return pd.read_csv(source)
 
 
 def run_path(path: str | Path, region_aware: bool = False) -> pd.DataFrame:

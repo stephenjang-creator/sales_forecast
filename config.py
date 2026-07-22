@@ -14,6 +14,28 @@ LATE_STAGES = ("Proposal", "Negotiation")
 OPEN_STAGES = ("Discovery", "Qualification", "Proposal", "Negotiation")
 EARLY_STAGES = ("Discovery", "Qualification")
 
+# Canonical sales-cycle order for sorting (qualify the lead, then discover the
+# need, then propose, then negotiate; closed stages last). Shared with the API so
+# the dashboard sorts the Stage column by funnel position, not alphabetically.
+STAGE_ORDER = {
+    "Qualification": 1,
+    "Discovery": 2,
+    "Proposal": 3,
+    "Negotiation": 4,
+    "Closed Won": 5,
+    "Closed Lost": 6,
+}
+# Forecast-category order for sorting, most-committed first. Reps only call a deal
+# Best Case once it reaches Proposal and Commit once it reaches Negotiation, so
+# the categories double as a rough confidence ladder (Closed is booked).
+FORECAST_ORDER = {
+    "Closed": 1,
+    "Commit": 2,
+    "Best Case": 3,
+    "Pipeline": 4,
+    "Omitted": 5,
+}
+
 # Typical days a healthy deal sits in each open stage.
 STAGE_NORMAL_DAYS = {
     "Discovery": 21,
@@ -77,7 +99,7 @@ ESTIMATE_BAND = 0.20
 # --------------------------------------------------------------------------- #
 # Typical days in each open stage, per region. Falls back to STAGE_NORMAL_DAYS.
 REGION_STAGE_NORMAL_DAYS = {
-    "NA": {"Discovery": 12, "Qualification": 14, "Proposal": 11, "Negotiation": 10},
+    "NAM": {"Discovery": 12, "Qualification": 14, "Proposal": 11, "Negotiation": 10},
     "EMEA": {"Discovery": 30, "Qualification": 36, "Proposal": 70, "Negotiation": 34},
     "APAC": {"Discovery": 21, "Qualification": 25, "Proposal": 20, "Negotiation": 18},
     "LATAM": {"Discovery": 24, "Qualification": 28, "Proposal": 23, "Negotiation": 21},

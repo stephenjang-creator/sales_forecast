@@ -27,6 +27,7 @@ Usage:
 import argparse
 import math
 import random
+from calendar import monthrange
 from datetime import date, timedelta
 
 import pandas as pd
@@ -62,7 +63,7 @@ except ImportError:  # pragma: no cover
 # ----------------------------------------------------------------------
 SEGMENTS = ["Enterprise", "Mid-Market", "SMB"]
 SEG_WEIGHTS = [0.20, 0.50, 0.30]
-REGIONS = ["NA", "EMEA", "APAC", "LATAM"]
+REGIONS = ["NAM", "EMEA", "APAC", "LATAM"]  # NAM (not "NA": collides with pandas NaN)
 REGION_WEIGHTS = [0.45, 0.30, 0.15, 0.10]
 
 # ----------------------------------------------------------------------
@@ -273,7 +274,11 @@ def _base_record(i, today):
     scores = _meddpicc_scores(stage, healthy=True)
     total, conf = _meddpicc_rollup(scores)
 
-    # forecast category loosely tied to stage + qualification
+    # Forecast category follows how reps actually call deals: Commit only appears
+    # at Negotiation (and only with real qualification behind it), Best Case not
+    # until Proposal, and early-stage deals sit in Pipeline/Omitted. Closed deals
+    # get the "Closed" category in a post-pass (_assign_closed_forecast) so this
+    # open-stage draw sequence stays byte-identical.
     if stage == "Negotiation" and conf >= 60:
         fcat = random.choice(["Commit", "Best Case"])
     elif stage in ("Proposal", "Negotiation"):
@@ -404,6 +409,13 @@ def inj_close_before_paper(rec, today):
 INJECTORS = [inj_slipped_close, inj_stalled_stage, inj_commit_low_qual,
              inj_late_stage_no_eb, inj_deep_discount_early, inj_close_before_paper]
 
+# Injectors that leave the forecast category alone (a deal keeps its stage-based
+# category). The two that force "Commit" (commit_low_qual, close_before_paper)
+# are the happy-ears anomalies -- they only make sense on a deal a rep is
+# actually committing, so they're reserved for watched deals below.
+FORECAST_NEUTRAL_INJECTORS = [inj_slipped_close, inj_stalled_stage,
+                              inj_late_stage_no_eb, inj_deep_discount_early]
+
 
 # ----------------------------------------------------------------------
 # Derived fields (what the detector will actually consume)
@@ -448,6 +460,61 @@ def _build_region_org(records, seed):
     return org
 
 
+def _assign_booked_dates(records, today, seed):
+    """Spread Closed Won (booked) deals across the trailing ~30 months.
+
+    A booked deal's close date is its **booking date**, so it must be in the past
+    (a won deal cannot close in the future) and spread over history so bookings
+    roll up YoY / QoQ / MoM / YTD. The spread is recency-weighted (a mild growth
+    trend -- recent months book ~2x the oldest) and each deal's created date is
+    pulled back a realistic cycle before it booked.
+
+    Closed Won deals are never anomaly-injected and are skipped by every rule, so
+    rewriting their dates here (from a dedicated RNG) leaves open deals and the
+    detector scorecard byte-identical. Open deals keep the forward-looking
+    projected close date set in ``_base_record``.
+    """
+    rng = random.Random(seed + 909)
+    horizon = 30  # months of booking history (covers 3 calendar years for YoY)
+    weights = [2 * horizon - o for o in range(horizon)]  # recent ~2x the oldest
+    for rec in records:
+        if rec["stage"] != "Closed Won":
+            continue
+        offset = rng.choices(range(horizon), weights=weights)[0]
+        year, month = today.year, today.month - offset
+        while month <= 0:
+            month += 12
+            year -= 1
+        last_day = monthrange(year, month)[1]
+        hi = today.day if (year == today.year and month == today.month) else last_day
+        booked = date(year, month, rng.randint(1, max(1, hi)))
+        rec["close_date"] = booked
+        rec["orig_close_date"] = booked  # booked as forecast; no slip
+        rec["stage_entry_date"] = booked  # entered Closed Won on the booking date
+        rec["created_date"] = booked - timedelta(days=rng.randint(45, 210))
+        rec["close_date_pushes"] = 0
+
+
+def _assign_closed_forecast(records):
+    """Forecast category for booked/lost deals.
+
+    A **Closed Won** deal is booked: it carries no risk (nothing left to slip) and
+    counts toward the period's forecast, so it gets the "Closed" category. A
+    **Closed Lost** deal is gone -- it's excluded from the forecast entirely, so
+    it gets "Omitted" (matching how CRMs drop lost deals out of the rollup).
+
+    Open deals keep the stage-gated category assigned in ``_base_record`` (Commit
+    only at Negotiation, Best Case only at Proposal+). This post-pass touches only
+    closed-stage rows and uses no RNG, so every other column -- and the detector
+    scorecard -- stays byte-identical.
+    """
+    for rec in records:
+        if rec["stage"] == "Closed Won":
+            rec["forecast_category"] = "Closed"
+        elif rec["stage"] == "Closed Lost":
+            rec["forecast_category"] = "Omitted"
+
+
 def _next_meeting(rec, today, rng):
     """Upcoming meeting date for an open deal (or "" if none / closed).
 
@@ -482,15 +549,30 @@ def build(n=600, seed=42, anomaly_rate=0.18):
         rec["rep"] = random.choice(reps)  # placeholder; region-specific owner set below
         records.append(rec)
 
-    # Inject anomalies into a random subset
+    # Inject anomalies into a random subset. How MANY issues a deal accumulates,
+    # and which kind, mirrors reality: a rep watches the deals they commit, so a
+    # flagged Commit usually hides a single decisive flaw (the "happy ears" case).
+    # Low-commitment deals (Pipeline/Omitted) get less attention, so when they go
+    # wrong they stack up several *hygiene* problems -- which lifts them off the
+    # single-issue risk-2 floor into the medium/high band, and keeps the top of
+    # the risk range from being all-Commit. The pre-injection (stage-based)
+    # forecast tells us how watched the deal is.
     n_anom = int(n * anomaly_rate)
     targets = random.sample(records, n_anom)
     for rec in targets:
-        order = list(INJECTORS)  # shuffle a copy; never mutate the shared list
-        random.shuffle(order)
+        low_commitment = rec["forecast_category"] in ("Pipeline", "Omitted")
+        if low_commitment:
+            # Neglected: 2-3 forecast-neutral problems -> medium/high risk, still
+            # Pipeline/Omitted (never force it up to Commit).
+            pool = list(FORECAST_NEUTRAL_INJECTORS)
+            want = random.choices([2, 3], weights=[0.55, 0.45])[0]
+        else:
+            # Watched (Commit/Best Case): usually one serious flaw, any type.
+            pool = list(INJECTORS)
+            want = random.choices([1, 2], weights=[0.70, 0.30])[0]
+        random.shuffle(pool)  # shuffle a copy; never mutate the shared list
         applied = 0
-        want = random.choices([1, 2], weights=[0.75, 0.25])[0]
-        for inj in order:
+        for inj in pool:
             if inj(rec, today):
                 applied += 1
                 if applied >= want:
@@ -498,8 +580,15 @@ def build(n=600, seed=42, anomaly_rate=0.18):
         if applied:
             rec["is_anomaly"] = True
 
+    # Give Closed Won deals their historical booking dates before deriving the
+    # day-count fields, so days_open/days_to_close reflect the real booking date.
+    _assign_booked_dates(records, today, seed)
+
     for rec in records:
         _derive(rec, today)
+
+    # Booked deals are "Closed" in the forecast (no RNG; open deals untouched).
+    _assign_closed_forecast(records)
 
     # Assign next-meeting dates from a dedicated RNG so this new column does not
     # shift the main random sequence (every other column stays reproducible).

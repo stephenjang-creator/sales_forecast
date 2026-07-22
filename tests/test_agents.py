@@ -85,7 +85,7 @@ def test_baseline_fast_mover_uplift_symmetry() -> None:
 
 def test_aggregate_sums_regions() -> None:
     preds = [
-        {"region": "NA", "month": {"projected_bookings": 2}, "quarter": {"projected_bookings": 5}},
+        {"region": "NAM", "month": {"projected_bookings": 2}, "quarter": {"projected_bookings": 5}},
         {
             "region": "EMEA",
             "month": {"projected_bookings": 20},
@@ -95,7 +95,7 @@ def test_aggregate_sums_regions() -> None:
     agg = _aggregate(preds)
     assert agg["month_projected_bookings"] == 22
     assert agg["quarter_projected_bookings"] == 55
-    assert agg["regions"] == ["NA", "EMEA"]
+    assert agg["regions"] == ["NAM", "EMEA"]
 
 
 # --------------------------------------------------------------------------- #

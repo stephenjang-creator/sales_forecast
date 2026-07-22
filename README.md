@@ -5,34 +5,46 @@
 ![React + Vite](https://img.shields.io/badge/react-vite-149eca)
 ![Code style: black](https://img.shields.io/badge/code%20style-black-000000)
 
-An executive-facing **forecast-risk dashboard** for a B2B SaaS pipeline. It reads
-a pipeline export, applies **deterministic rules grounded in MEDDPICC** and
-deal-hygiene, and surfaces *which committed / best-case deals are at risk, and
-why* — money at risk (ARR) up top, a region-grouped deal list with risk bands, a
-click-to-open detail drawer, and an "Ask anything" bar that routes questions to
-one of four agents. The **human-in-the-loop** split is the whole point: the
-deterministic rules own every flag and risk score; the model only explains and
-routes. Every number is auditable — a sales manager can read any flag and verify
-it against the CRM record. All data is synthetic.
+An executive-facing **forecast dashboard** for a B2B SaaS pipeline. It reads a
+pipeline export, applies **deterministic rules grounded in MEDDPICC** and
+deal-hygiene, and does the two things a forecast call needs:
+
+1. **Flags risk** — *which committed / best-case deals are at risk, and why* —
+   with money at risk (ARR) up top, a sortable region-grouped deal list with risk
+   bands, a click-to-open detail drawer, and an "Ask anything" bar that routes
+   questions to one of four agents.
+2. **Projects the number** — pick a timeframe (**this month / quarter / year**)
+   and the whole board rescopes to it: **booked-so-far + open pipeline → a
+   risk-adjusted projection**, booked Closed-Won deals shown in-line, and a
+   **YoY / QoQ / MoM** bookings-trend view.
+
+The **human-in-the-loop** split is the whole point: the deterministic rules own
+every flag and risk score; the model only explains and routes. Every number is
+auditable — a sales manager can read any flag and verify it against the CRM
+record. All data is synthetic.
 
 **Stack:** React + Vite · FastAPI · Python · pandas · Model Context Protocol
 (MCP) · Anthropic SDK · Docker · pytest / ruff / black.
 
 **What it demonstrates:** a deterministic, fully-tested rule engine with a real
 evaluation harness (precision / recall / F1 vs. labeled ground truth); a FastAPI
-service + React SPA deployable as one container; an MCP tool server and a
-multi-agent layer (per-region bookings forecasting, a deal/region "sales guru",
-and the dashboard's agent bar); and a disciplined design where the rules decide
-and the LLM only explains — so every flag is auditable.
+service + React SPA deployable as one container; **period-over-period bookings
+math** (YoY / QoQ / MoM / YTD) and a **risk-adjusted forecast projection** by
+timeframe; an MCP tool server and a multi-agent layer (per-region bookings
+forecasting, a deal/region "sales guru", and the dashboard's agent bar); and a
+disciplined design where the rules decide and the LLM only explains — so every
+flag is auditable.
 
-![Intelligent Forecast — executive dashboard: money at risk, agent bar, and the region-grouped flagged-deal list](docs/dashboard.png)
+![Intelligent Forecast — executive dashboard: the period projection (booked + open pipeline → risk-adjusted forecast), agent bar, and the sortable region-grouped deal list](docs/dashboard.png)
 
-*The web dashboard (`make api` + `make web-build`, or `docker run`): money at
-risk up top, an agent bar that routes to four RevOps agents, a Fast Mover upside
-alert, and the region-grouped flagged-deal list — each row opening a detail
-drawer with the flagging reason and recommended step. Deploy it anywhere with
-Docker (see [`DEPLOY.md`](DEPLOY.md)); set `ANTHROPIC_API_KEY` for LLM-backed
-agent answers, or run it fully offline.*
+*The web dashboard (`make api` + `make web-build`, or `docker run`): a
+**timeframe control** (this month / quarter / year) rescopes the whole board to a
+**period projection** — booked + open pipeline → a risk-adjusted forecast — over
+an agent bar that routes to four RevOps agents, a Fast Mover upside alert, and the
+sortable, foldable region-grouped deal list. Each row opens a detail drawer with
+the flagging reason and recommended step; booked Closed-Won deals show in green.
+Deploy it anywhere with Docker (see [`DEPLOY.md`](DEPLOY.md)); set
+`ANTHROPIC_API_KEY` for LLM-backed agent answers, or run it fully offline.*
 
 ## Who it's for — value by role
 
@@ -42,13 +54,15 @@ a 600-deal pipeline scored by deterministic rules, not a black-box model.
 
 ### 💵 CFO — "Can I trust the number I'm about to commit to the board?"
 
-- **Sees:** how much of the Commit + Best-Case forecast is actually shaky (the
-  *money-at-risk* KPI — e.g. `$1.2M at risk across 25 deals`), and a **Model
-  health** tab showing the detector's own precision / recall / F1 against
-  labeled ground truth.
+- **Sees:** a **period projection** for the month / quarter / year — booked +
+  open pipeline → a risk-adjusted number (e.g. `$229k booked + $12.4M pipeline →
+  $4.85M projected this quarter`) — how much of it is shaky (the *money-at-risk*
+  KPI), a **YoY / QoQ / MoM** bookings trend, and a **Model health** tab showing
+  the detector's own precision / recall / F1 against labeled ground truth.
 - **Value:** a **defensible, auditable forecast**. Every flag is a rule a human
-  can verify against the CRM — so guidance, cash planning, and quota-setting rest
-  on evidence, not optimism. The tool even reports where it's *less* certain.
+  can verify against the CRM, and the projection is booked actuals + a transparent
+  risk haircut — so guidance, cash planning, and quota-setting rest on evidence,
+  not optimism. The tool even reports where it's *less* certain.
 
 ### 📈 CRO — "Where do I point the team to hit the number?"
 
@@ -73,7 +87,7 @@ a 600-deal pipeline scored by deterministic rules, not a black-box model.
 
 Underneath, the same deterministic engine powers all three — the
 [eval scorecard](#eval-scorecard) shows exactly how accurate it is
-(**F1 0.835 → 0.954** region-aware), and every flag traces back to one auditable
+(**F1 0.847 → 0.960** region-aware), and every flag traces back to one auditable
 rule.
 
 ## Eval scorecard
@@ -90,33 +104,33 @@ labeled relative to each region's norm, so the detector is scored two ways
 
 | Metric | Region-agnostic (one global norm) | **Region-aware (each region's norm)** |
 | --- | --- | --- |
-| Precision | 0.736 | **0.922** |
-| Recall | 0.964 | **0.988** |
-| **F1** | **0.835** | **0.954** |
-| Confusion (TP/FP/FN/TN) | 81 / 29 / 3 / 487 | 83 / 7 / 1 / 509 |
+| Precision | 0.741 | **0.923** |
+| Recall | 0.988 | **1.000** |
+| **F1** | **0.847** | **0.960** |
+| Confusion (TP/FP/FN/TN) | 83 / 29 / 1 / 487 | 84 / 7 / 0 / 509 |
 
-Region-aware scoring recovers **+11.9 F1 points** — the two region-sensitive
+Region-aware scoring recovers **+11.3 F1 points** — the two region-sensitive
 rules tell the story:
 
 | Rule (region-aware) | Precision | Recall | vs agnostic |
 | --- | --- | --- | --- |
 | slipped_close_date | 1.000 | 1.000 | — |
-| **stalled_in_stage** | **1.000** | **1.000** | agnostic 0.542 / 0.684 |
-| commit_low_meddpicc | 0.714 | 0.909 | region-independent |
-| late_stage_no_economic_buyer | 0.857 | 1.000 | region-independent |
-| **premature_deep_discount** | **0.600** | 1.000 | agnostic 0.300 prec |
-| imminent_close_no_paper_process | 0.909 | 0.952 | — |
+| **stalled_in_stage** | **1.000** | **1.000** | agnostic 0.784 / 0.741 |
+| commit_low_meddpicc | 0.667 | 1.000 | region-independent |
+| late_stage_no_economic_buyer | 0.800 | 1.000 | region-independent |
+| **premature_deep_discount** | **0.833** | 1.000 | agnostic 0.588 prec |
+| imminent_close_no_paper_process | 0.889 | 1.000 | — |
 
 **Reading the numbers, honestly** (full before/after in [`TUNING.md`](TUNING.md)):
 
 - **`stalled_in_stage`:** the global norm over-flags EMEA's normally-long
-  proposals *and* misses NA's fast-region stalls; judging against each region's
-  own norm fixes both (0.54/0.68 → 1.00/1.00).
+  proposals *and* misses NAM's fast-region stalls; judging against each region's
+  own norm fixes both (0.78/0.74 → 1.00/1.00).
 - **`premature_deep_discount`:** region-aware stops false-flagging APAC's normal
-  early discounts (0.30 → 0.60 precision). The residual false positives are
+  early discounts (0.59 → 0.83 precision). The residual false positives are
   natural 40% catalog discounts in other regions — feature-identical to the real
   ones, so we flag them honestly rather than overfit.
-- **`commit_low_meddpicc` (0.71/0.91) / `late_stage_no_economic_buyer` (0.86/1.00)**
+- **`commit_low_meddpicc` (0.67/1.00) / `late_stage_no_economic_buyer` (0.80/1.00)**
   carry some realistic co-injection overlap and are region-independent (identical
   in both modes).
 
@@ -157,11 +171,31 @@ the agents, and the dashboard's agent bar) touch the Anthropic API; set
 
 The primary product is a **React + Vite** single-page dashboard served by a
 **FastAPI** backend (`api/`) that reuses the detector — the two deploy as **one
-container**. The API is read-only:
+container**. What it does:
 
-- `GET /api/forecast` — flagged deals (with owner / manager / MRR / ARR, and each
-  firing rule's reason + recommended step), KPI tiles, the AI summary line, the
-  model-health scorecard, and the Fast Mover banner.
+- **Period projection** — a header timeframe control (this month / quarter /
+  year) rescopes the whole board by close date: **booked-so-far + open pipeline →
+  a risk-adjusted projection** (stage win-rates, a haircut on flagged deals, an
+  uplift on fast movers), plus open-pipeline and at-risk totals for the period.
+- **Bookings trend** — a Bookings tab with **YoY / QoQ / MoM / YTD** deltas and a
+  month/quarter/year bar chart, computed from the Closed-Won booking history.
+- **Flagged-deal list** — sortable on every column, foldable by region, filterable
+  by risk / region / segment. Each row opens a **detail drawer** (flagging reason
+  + recommended step). **Booked Closed-Won** deals show in green (no action) and
+  can be toggled off.
+- **Ask anything** — the agent bar routes a question to one of four agents and
+  answers from the real data. It runs in **demo mode** (deterministic answers, no
+  key needed); for the **full AI experience** a visitor can paste their own
+  Anthropic key into the bar — used only for their questions and **never stored,
+  logged, or persisted**.
+
+The API is read-only:
+
+- `GET /api/forecast` — flagged deals (owner / manager / MRR / ARR, each firing
+  rule's reason + recommended step, projected close date), booked Closed-Won
+  deals, per-month pipeline buckets (for the projection), the YoY/QoQ/MoM bookings
+  summary, KPI tiles, the AI summary line, the model-health scorecard, and the
+  Fast Mover banner.
 - `POST /api/ask` — routes a natural-language question to one of four agents
   (Risk Triage, Forecast Explainer, Pipeline Analyst, Deal Rescue Planner) and
   answers from the real data; uses the LLM when `ANTHROPIC_API_KEY` is set,
@@ -180,10 +214,16 @@ make docker                       # docker build -t intelligent-forecast .
 docker run -p 8000:8000 -e ANTHROPIC_API_KEY=sk-... intelligent-forecast
 ```
 
+![Bookings tab — YoY / QoQ / MoM / YTD deltas and a quarterly bookings-trend chart with the in-progress period dashed](docs/bookings.png)
+
+*The Bookings tab: period-over-period deltas (booked YTD +25% YoY, last complete
+quarter −4% QoQ, last complete month +14% MoM) over a month/quarter/year
+bookings-trend chart — all computed from the Closed-Won booking history.*
+
 Full deployment guide (env vars, managed hosts): [`DEPLOY.md`](DEPLOY.md). The
 dashboard works fully **without** a key — the agent bar just falls back to
 deterministic answers. A lightweight **Streamlit** view (`make app`) is kept as
-a secondary/portfolio UI (see [The UI](#the-ui)).
+a secondary/portfolio UI (see [The Streamlit view](#the-streamlit-view-secondary)).
 
 ## How the rules map to MEDDPICC
 
@@ -210,7 +250,7 @@ sales_forecast/
 ├── generate_forecast_data.py   # synthetic labeled pipeline (region-aware behavior)
 ├── generate_history.py         # synthetic historical bookings + forward targets
 ├── data/
-│   ├── pipeline.csv            # labeled deals: MRR/ARR, firmographics, MEDDPICC, region, owner + sales manager, next_meeting_date
+│   ├── pipeline.csv            # labeled deals: MRR/ARR, firmographics, MEDDPICC, region, owner + sales manager, next_meeting_date, booked/projected close dates
 │   ├── history.csv             # 36 months of actual bookings + quota per region
 │   └── targets.csv             # current + forward quotas per region
 ├── config.py                   # every tunable threshold (+ win-rates/haircut)
@@ -233,7 +273,9 @@ sales_forecast/
 │   └── server.py               # FastAPI app: JSON API + serves the built SPA
 ├── web/                        # React + Vite dashboard (the Intelligent Forecast UI)
 │   ├── index.html · vite.config.js · package.json
-│   └── src/                    # App.jsx, tokens.js, api.js, components/*
+│   └── src/                    # App.jsx, tokens.js, api.js, time.js (timeframe
+│                               #   projection math), components/* (Header, Summary,
+│                               #   DealsTab, BookingsTab, Drawer, HoverPeek, …)
 ├── tests/
 │   ├── test_rules.py           # a firing row + a clean row per rule
 │   ├── test_signals.py         # fast-mover / complex-deal signal classifiers
@@ -300,7 +342,7 @@ deterministic, non-anomaly classifiers driven by **champion seniority** and
 | --- | --- | --- |
 | **`fast_mover`** | opportunity | Champion is **Director+** *and* the process is **simple** (≤1 approval layer, no C-suite gate) — likely to close quickly |
 | **`complex_deal`** | risk / duration | **C-suite** sign-off *or* **≥3** approval layers — expect a longer, less predictable cycle (the data reflects it: these run longer) |
-| **`meeting_at_risk`** | risk / cadence | Next meeting is **more than a week out** (`NEXT_MEETING_MAX_DAYS`) *or* **none is booked** — momentum is slipping; run a **value touch** to pull a sooner next step in |
+| **`meeting_at_risk`** | risk / cadence | Next meeting is **more than a week out** (`NEXT_MEETING_MAX_DAYS`) → value touch to pull it sooner; *or* **none is booked** → prioritized **value touch to book one and land the deal's top play in it** |
 
 Signals aren't scored against `is_anomaly` (a fast mover is *good*, and
 `meeting_at_risk` fires on ~40% of open deals — far too broad to be a scored
@@ -308,9 +350,15 @@ anomaly) — they're deterministic derivations surfaced for triage. `engine.run`
 adds `signals`, `fast_mover`, `complex_deal`, and `meeting_at_risk` columns; the
 UI shows counts + tables and per-deal badges; and the MCP layer exposes them
 (`signals_summary`, `list_deals(signal="meeting_at_risk")`, and `assess_deal`'s
-`decision_profile` + `signals`). `meeting_at_risk` maps to a **value-touch play**,
-so it shows up in `recommend_plays` and the regional worklist alongside the
-anomaly plays. Thresholds live in `config.py`.
+`decision_profile` + `signals`). `meeting_at_risk` maps to a **value-touch play**
+that adapts to the deal: a meeting merely too far out gets a *pull-sooner* touch,
+but **when no meeting is booked nothing can advance**, so the play becomes the
+**prioritized first move** — book the meeting with a value touch **and land the
+deal's top play in it** (understand the paper process + timeline, close the
+MEDDPICC gaps, get the economic buyer in the room). It's prepended in
+`recommend_plays` (ahead of the anomaly plays, which become the meeting's agenda)
+and, in the regional worklist, no-meeting deals group under that book-it action
+with each deal's top risk named. Thresholds live in `config.py`.
 
 ### Region-aware thresholds (opt-in)
 
@@ -320,12 +368,12 @@ its region's own norms (all tunable in `config.py`):
 
 | Region | Behavior (baked into the data) | Effect on rules |
 | --- | --- | --- |
-| **NA (US)** | Deals move fast (short time-in-stage) | `stalled_in_stage` uses NA's short norm → catches fast-region stalls the global norm misses |
+| **NAM (US)** | Deals move fast (short time-in-stage) | `stalled_in_stage` uses NAM's short norm → catches fast-region stalls the global norm misses |
 | **EMEA** | Deals run long; proposals linger (~70-day norm) | `stalled_in_stage` uses EMEA's long norm → stops over-flagging normal long proposals |
 | **APAC** | Early deep discounts are normal practice | `premature_deep_discount` is suppressed |
 
 Because the labels are region-relative, region-aware scoring **materially
-outperforms** the naive one-global-norm detector: **F1 0.835 → 0.954** (see the
+outperforms** the naive one-global-norm detector: **F1 0.847 → 0.960** (see the
 scorecard above and [`TUNING.md`](TUNING.md)). It's **off by default** for
 backward-compatible reproducibility; enable it via the UI toggle,
 `engine.run(df, region_aware=True)`, `make eval-region`, or the `region_aware`
@@ -442,7 +490,7 @@ make attainment-dry                          # NO key: deterministic tool rollup
 and get real numbers offline. Sample offline output on the bundled data:
 
 ```
-  NA     This month:   $608,894   (49% attain, YoY -41%) [2026-07]
+  NAM     This month:   $608,894   (49% attain, YoY -41%) [2026-07]
          This quarter: $2,850,602 (58% attain, YoY -33%) [2026-Q3]
   EMEA   This month:   $192,811   (24% attain, YoY -74%) [2026-07]
          This quarter: $1,571,170 (51% attain, YoY -43%) [2026-Q3]
@@ -484,7 +532,7 @@ flag; the plays *respond* to the flags the rules already set.
 - **Coach one deal** (`--deal D-10023`): reads `assess_deal` + `recommend_plays`,
   then personalizes the plays to the deal — a talk track for the next call,
   sharpened next steps, the right owner.
-- **Prioritize a region** (`--region NA` / `--all`): reads `region_top_actions`
+- **Prioritize a region** (`--region NAM` / `--all`): reads `region_top_actions`
   and gives the VP the **top deals to act on today** — the highest-priority
   `max_deals` (default 10) region-wide, grouped by the play to run. Every surfaced
   deal is **listed by company + MRR** (how reps think) — no hidden "+N more" tail;
@@ -513,7 +561,7 @@ flag; the plays *respond* to the flags the rules already set.
   (calls are scarce) — each with its owner and **`next_meeting_date`** so the VP
   knows whose call it is and exactly when (or that none is booked).
 - **Chat** (`--chat`): an interactive session with every detector tool. Ask
-  _"what are my top 3 things in NA?"_ and then keep prompting — _"tell me more
+  _"what are my top 3 things in NAM?"_ and then keep prompting — _"tell me more
   about #2"_, _"who owns the Acme deal?"_, _"assess Umbra Solutions"_ — the
   conversation persists, so follow-ups build on what came before.
 
@@ -521,8 +569,8 @@ flag; the plays *respond* to the flags the rules already set.
 export ANTHROPIC_API_KEY=sk-...
 make guru                                    # every region's prioritized actions
 python -m agents.sales_guru --deal D-10023   # coach one deal
-python -m agents.sales_guru --region NA      # one region's worklist (--max-deals to change)
-python -m agents.sales_guru --chat --region NA   # ask, then keep prompting
+python -m agents.sales_guru --region NAM      # one region's worklist (--max-deals to change)
+python -m agents.sales_guru --chat --region NAM   # ask, then keep prompting
 python -m agents.sales_guru --all --json     # machine-readable
 
 make guru-dry                                # NO key: deterministic worklist
